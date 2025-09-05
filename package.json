@@ -1,0 +1,70 @@
+{
+  "name": "branch-compare",
+  "displayName": "branch-compare",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "compilerOptions": {
+    "importsNotUsedAsValues": "remove",
+    "preserveConstEnums": false,
+    "verbatimModuleSyntax": false
+  },
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "branchCompare.setBase",
+        "title": "Branch Compare: Set Base Branch"
+      },
+      {
+        "command": "branchCompare.refresh",
+        "title": "Branch Compare: Refresh Decorations"
+      }
+    ],
+    "configuration": {
+      "title": "Branch Compare",
+      "properties": {
+        "branchCompare.baseRef": {
+          "type": "string",
+          "default": "",
+          "description": "Base branch/ref to compare against (e.g. `origin/main`). **Empty string disables** decorations."
+        },
+        "branchCompare.autoFetch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto 'git fetch' the base ref before computing changes."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "publish": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.103.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^8.39.0",
+    "@typescript-eslint/parser": "^8.39.0",
+    "eslint": "^9.32.0",
+    "typescript": "^5.9.2",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
