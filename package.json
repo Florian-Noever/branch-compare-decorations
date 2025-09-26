@@ -1,18 +1,35 @@
 {
   "name": "branch-compare",
-  "displayName": "branch-compare",
-  "description": "",
+  "displayName": "Branch Compare",
+  "publisher": "der-floh",
+  "description": "Select to which branch git compares to display its colordecorations.",
   "version": "0.0.1",
+  "icon": "assets/icon-x512.png",
+  "preview": true,
   "repository": {
     "url": "https://github.com/FlorianNoeverGOB/branch-compare"
   },
+  "bugs": {
+    "url": "https://github.com/FlorianNoeverGOB/branch-compare/issues"
+  },
+  "homepage": "https://github.com/FlorianNoeverGOB/branch-compare#readme",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.103.0"
   },
+  "keywords": [
+    "git",
+    "compare",
+    "branch",
+    "base branch",
+    "decorations",
+    "diff"
+  ],
   "categories": [
-    "Other"
+    "SCM Providers"
   ],
   "activationEvents": [
+    "workspaceContains:.git",
     "onStartupFinished"
   ],
   "extensionDependencies": [
@@ -35,13 +52,33 @@
         "title": "Branch Compare: Refresh Decorations"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "branchCompare.setBase",
+          "when": "gitOpenRepositoryCount > 0"
+        },
+        {
+          "command": "branchCompare.refresh",
+          "when": "gitOpenRepositoryCount > 0"
+        }
+      ]
+    },
     "configuration": {
       "title": "Branch Compare",
       "properties": {
-        "branchCompare.baseRef": {
-          "type": "string",
-          "default": "",
-          "description": "Base branch/ref to compare against (e.g. `origin/main`). **Empty string disables** decorations."
+        "branchCompare.baseRefs": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "List of the Branch and Base branch/ref to compare against (e.g. `yourBranch:` `origin/main`).",
+          "additionalProperties": {
+            "type": "string",
+            "description": "Your Branch that should be compared."
+          },
+          "propertyNames": {
+            "pattern": "^[\\w./-]+$",
+            "description": "Branch name (allowed: letters, digits, _, ., /, -)"
+          }
         },
         "branchCompare.autoFetch": {
           "type": "boolean",
@@ -57,7 +94,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "publish": "npx @vscode/vsce package"
+    "package": "npx -y @vscode/vsce package"
   },
   "devDependencies": {
     "@types/vscode": "^1.103.0",

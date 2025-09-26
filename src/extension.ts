@@ -1,26 +1,30 @@
 import * as vscode from 'vscode';
-import { BranchCompareProvider } from './branchCompareProvider';
-import { GitBranchPicker } from './gitBranchPicker';
+import { BranchCompareProvider } from './models/branchCompareProvider';
+import { GitBranchPicker } from './models/gitBranchPicker';
+import { GitUtils } from './utils/gitUtils';
+import { BaseRefUtils } from './utils/baseRefUtils';
+
+export const EXTENSION = 'branchCompare';
+export const CONFIG_BASEREFS = 'baseRefs';
+export const CONFIG_AUTOFETCH = 'autoFetch';
+export const COMMAND_REFRESH = 'refresh';
+export const COMMAND_SETBASE = 'setBase';
 
 let provider: BranchCompareProvider | undefined;
 let picker: GitBranchPicker;
 
 export async function activate(context: vscode.ExtensionContext) {
-	// Git API
-	const gitExt = vscode.extensions.getExtension<any>('vscode.git')?.exports;
-	const git = gitExt?.getAPI(1);
-
 	// Decorations
 	provider = new BranchCompareProvider();
 	context.subscriptions.push(vscode.window.registerFileDecorationProvider(provider));
 
 	// Branch picker
-	picker = new GitBranchPicker(git);
+	picker = new GitBranchPicker();
 
 	// Commands
 	context.subscriptions.push(
-		vscode.commands.registerCommand('branchCompare.refresh', refreshDecorations),
-		vscode.commands.registerCommand('branchCompare.setBase', setBaseRepo) //todo Bug: Uses old Ref for update
+		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_REFRESH, refreshDecorations),
+		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_SETBASE, setBaseRepo)
 	);
 
 	// Initial compute
@@ -39,15 +43,25 @@ async function refreshDecorations() {
 }
 
 async function setBaseRepo(): Promise<void> {
-	const cfg = vscode.workspace.getConfiguration('branchCompare');
-	const current = cfg.get<string>('baseRef', 'origin/dev');
+	let currBranchName = '';
+	let currBaseRef = '';
 
-	const chosen = await picker.pickBaseRef(current);
+	try {
+		const currBranch = GitUtils.getCurrBranch();
+		currBranchName = GitUtils.getBranchName(currBranch!) ?? '';
+		currBaseRef = BaseRefUtils.getCurrBaseRef();
+	} catch (e) {
+		vscode.window.showErrorMessage(`Branch Compare: Failed to get current repository: ${e}`);
+		return;
+	}
+
+	const chosen = await picker.pickBaseRef(currBaseRef);
 	if (chosen === undefined) {
 		return; // cancelled
 	}
 
-	await cfg.update('baseRef', chosen, vscode.ConfigurationTarget.Workspace);
+	await BaseRefUtils.addOrUpdateBaseRef(currBranchName, chosen);
+
 	if (!chosen.trim()) {
 		vscode.window.showInformationMessage('Branch Compare: disabled.');
 	} else {

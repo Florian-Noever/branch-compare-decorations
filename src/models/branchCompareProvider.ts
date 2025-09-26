@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import type { API as GitAPI, Repository, Change } from './git';
-import { Status } from './git';
+import type { API as GitAPI, Repository, Change, Ref } from '../git';
+import { Status } from '../git';
+import { CONFIG_AUTOFETCH, CONFIG_BASEREFS, EXTENSION } from '../extension';
+import { BaseRefUtils } from '../utils/baseRefUtils';
+import { GitUtils } from '../utils/gitUtils';
 
 const isWindows = process.platform === 'win32';
 const normFs = (p: string) => {
@@ -21,37 +24,43 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
     constructor() {
         // Grab the built-in Git API
-        const gitExt = vscode.extensions.getExtension<any>('vscode.git')?.exports;
-        this.git = gitExt?.getAPI(1);
+        this.git = GitUtils.getGitApi();
 
         // React to config changes
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('branchCompare.baseRef') || e.affectsConfiguration('branchCompare.autoFetch')) {
+            if (e.affectsConfiguration(EXTENSION + '.' + CONFIG_BASEREFS) || e.affectsConfiguration(EXTENSION + '.' + CONFIG_AUTOFETCH)) {
                 this.refresh();
             }
         });
 
         // Refresh on typical change triggers
-        vscode.workspace.onDidSaveTextDocument(() => this.refresh());
-        vscode.workspace.onDidCreateFiles(() => this.refresh());
-        vscode.workspace.onDidDeleteFiles(() => this.refresh());
-        vscode.workspace.onDidRenameFiles(() => this.refresh());
+        vscode.workspace.onDidSaveTextDocument(this.refresh);
+        vscode.workspace.onDidCreateFiles(this.refresh);
+        vscode.workspace.onDidDeleteFiles(this.refresh);
+        vscode.workspace.onDidRenameFiles(this.refresh);
 
-        // Also refresh when Git repos change
-        this.git?.onDidOpenRepository?.((repo: Repository) => {
-            repo.state.onDidChange(() => this.refresh());
-            repo.onDidCheckout?.(() => this.refresh());
-            repo.onDidCommit?.(() => this.refresh());
-            this.refresh();
-        });
+        // Handle existing repositories that were opened before extension activation
+        if (this.git) {
+            // Subscribe to existing repositories
+            for (const repo of this.git.repositories) {
+                this.subscribeToRepository(repo);
+            }
+
+            // Subscribe to future repository openings
+            this.git.onDidOpenRepository?.((repo: Repository) => {
+                this.subscribeToRepository(repo);
+                this.refresh(); // Refresh when new repo is opened
+            });
+
+            // Subscribe to repository closings
+            this.git.onDidCloseRepository?.(() => {
+                this.refresh(); // Refresh when repo is closed
+            });
+        }
     }
 
-    private get baseRef() {
-        return vscode.workspace.getConfiguration('branchCompare').get<string>('baseRef', '');
-    }
-
-    private get autoFetch() {
-        return vscode.workspace.getConfiguration('branchCompare').get<boolean>('autoFetch', true);
+    private get autoFetch(): boolean {
+        return vscode.workspace.getConfiguration(EXTENSION).get<boolean>(CONFIG_AUTOFETCH, true);
     }
 
     private toUri(p: string) {
@@ -59,7 +68,19 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     }
 
     private isDisabled() {
-        return !this.baseRef || this.baseRef.trim().length === 0;
+        const currBaseRef = BaseRefUtils.getCurrBaseRef();
+        return !currBaseRef || currBaseRef.trim().length === 0;
+    }
+
+    private subscribeToRepository(repo: Repository) {
+        if ((repo as any).__branchCompareSubscribed) {
+            return;
+        }
+        (repo as any).__branchCompareSubscribed = true;
+
+        repo.state.onDidChange(() => this.refresh());
+        repo.onDidCheckout?.(() => this.refresh());
+        repo.onDidCommit?.(() => this.refresh());
     }
 
     private parentsWithinWorkspace(absPath: string): vscode.Uri[] {
@@ -142,7 +163,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         return {
             badge: status,                           // one-letter badge like A/M/D/R
-            tooltip: `Changes vs ${this.baseRef}`,
+            tooltip: `Changes vs ${BaseRefUtils.getCurrBaseRef()}`,
             color: new vscode.ThemeColor(colorKey),
             propagate: true                          // decorate parent folders too
         };
@@ -185,7 +206,24 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         }
 
         try {
-            let baseRef = this.baseRef;
+            let baseRef = BaseRefUtils.getCurrBaseRef();
+
+            // Handle special branch origin comparison
+            if (baseRef === '__branch_origin__') {
+                const currentBranch = repo.state.HEAD;
+                if (currentBranch?.name) {
+                    const divergencePoint = await this.findCurrentBranchCreationPoint(repo, currentBranch.name);
+                    if (divergencePoint) {
+                        baseRef = divergencePoint;
+                    } else {
+                        // Fallback to main/master
+                        baseRef = await this.findMainDevelopmentBranch(repo) || 'origin/dev';
+                    }
+                }
+            } else if (baseRef === '__main_origin__') {
+                // Find and use the main development branch
+                baseRef = await this.findMainDevelopmentBranch(repo) || 'origin/dev';
+            }
 
             // Keep base ref fresh (e.g., 'origin/main')
             if (this.autoFetch && baseRef.includes('/')) { //todo Check
@@ -193,19 +231,99 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
                 const remoteRef = refParts.join('/');
                 if (remote && remoteRef) {
                     await repo.fetch(remote, remoteRef).catch(() => { });
+                    await new Promise(resolve => setTimeout(resolve, 100)); // wait a bit for the repo to refresh its state
                 }
             }
 
-            // Compute merge-base
-            const mergeBase = await repo.getMergeBase(baseRef, 'HEAD'); // may be undefined
-            const ref1 = mergeBase ?? baseRef;
+            // If comparing local branch to its origin, find the actual divergence point
+            const currentBranch = repo.state.HEAD;
+            if (currentBranch?.name && baseRef !== currentBranch.name) {
+                const creationPoint = await this.findBranchCreationPoint(repo, currentBranch.name, baseRef);
+                if (creationPoint) {
+                    baseRef = creationPoint;
+                }
+            }
 
-            // List file-level changes between ref1 and HEAD
-            const changes = await repo.diffBetween(ref1, 'HEAD');
-            // const changeDebug = changes.map(change => `${change.status}: ${path.basename(change.uri.fsPath)}`);
+            // List file-level changes between base and HEAD
+            const changes = await repo.diffBetween(baseRef, 'HEAD');
             await Promise.all(changes.map(change => this.handleChange(change)));
         } catch {
             // Ignore repo errors (non-git folder, detached states, etc.)
+        }
+    }
+
+    private async findCurrentBranchCreationPoint(repo: Repository, currentBranch: string): Promise<string | null> {
+        try {
+            // Try to find common ancestor with main branches
+            const commonBaseBranches = ['dev', 'develop', 'main', 'master'];
+
+            for (const baseBranch of commonBaseBranches) {
+                const candidates = [`origin/${baseBranch}`, baseBranch];
+
+                for (const candidate of candidates) {
+                    try {
+                        const mergeBase = await repo.getMergeBase(candidate, currentBranch);
+                        if (mergeBase) {
+                            // Verify this is actually a divergence point, not the current commit
+                            const currentCommit = repo.state.HEAD?.commit;
+                            if (mergeBase !== currentCommit) {
+                                return mergeBase;
+                            }
+                        }
+                    } catch {
+                        continue;
+                    }
+                }
+            }
+
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    private async findMainDevelopmentBranch(repo: Repository): Promise<string | null> {
+        try {
+            const commonMainBranches = ['dev', 'develop', 'main', 'master'];
+
+            // Get all remote branches
+            const remoteBranches = await repo.getBranches({ remote: true }) as Ref[];
+
+            // Look for origin versions of main branches
+            for (const branchName of commonMainBranches) {
+                const found = remoteBranches.find(ref =>
+                    ref.name === `origin/${branchName}`
+                );
+
+                if (found) {
+                    return found.name!;
+                }
+            }
+
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    private async findBranchCreationPoint(repo: Repository, currentBranch: string, targetBaseRef: string): Promise<string | null> {
+        try {
+            // Find the merge-base between current branch and the target base ref
+            // This gives us the commit where the current branch was created from the target branch
+            const mergeBase = await repo.getMergeBase(targetBaseRef, currentBranch);
+
+            if (mergeBase) {
+                const currentCommit = repo.state.HEAD?.commit;
+                // Only use merge-base if it's different from current commit
+                // (if they're the same, it means no changes have been made)
+                if (mergeBase !== currentCommit) {
+                    return mergeBase;
+                }
+            }
+
+            return null;
+        } catch {
+            return null;
         }
     }
 
