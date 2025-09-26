@@ -55,7 +55,7 @@ async function setBaseRepo(): Promise<void> {
 		return;
 	}
 
-	const chosen = await picker.pickBaseRef(currBaseRef);
+	const chosen = await picker.pickBaseReference(currBaseRef);
 	if (chosen === undefined) {
 		return; // cancelled
 	}
