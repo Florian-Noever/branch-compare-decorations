@@ -13,7 +13,13 @@ export const COMMAND_SETBASE = 'setBase';
 let provider: BranchCompareProvider | undefined;
 let picker: GitBranchPicker;
 
+export let log: vscode.LogOutputChannel;
+
 export async function activate(context: vscode.ExtensionContext) {
+	// Output channel
+	log = vscode.window.createOutputChannel('Branch Compare', { log: true });
+	context.subscriptions.push(log);
+
 	// Decorations
 	provider = new BranchCompareProvider();
 	context.subscriptions.push(vscode.window.registerFileDecorationProvider(provider));
@@ -26,9 +32,6 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_REFRESH, refreshDecorations),
 		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_SETBASE, setBaseRepo)
 	);
-
-	// Initial compute
-	await provider.refresh();
 }
 
 export function deactivate() { }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { API as GitAPI, Repository, Ref } from '../git';
 import path from 'path';
 import { GitUtils } from '../utils/gitUtils';
+import { log } from '../extension';
 
 /**
  * Provides user interface for selecting Git branch references for comparison.
@@ -50,13 +51,13 @@ export class GitBranchPicker {
      * and branch data for the picker interface.
      */
     constructor() {
-        console.log('[GitBranchPicker] Initializing branch picker');
+        log.info('[GitBranchPicker] Initializing branch picker');
 
         this.gitApi = GitUtils.getGitApi();
         if (!this.gitApi) {
-            console.warn('[GitBranchPicker] Git API not available - picker functionality will be limited');
+            log.warn('[GitBranchPicker] Git API not available - picker functionality will be limited');
         } else {
-            console.log('[GitBranchPicker] Git API connected successfully');
+            log.info('[GitBranchPicker] Git API connected successfully');
         }
     }
 
@@ -87,18 +88,18 @@ export class GitBranchPicker {
      * ```
      */
     async pickBaseReference(currentSelection?: string): Promise<string | undefined> {
-        console.log(`[GitBranchPicker] Starting base reference selection, current: ${currentSelection || 'none'}`);
+        log.debug(`[GitBranchPicker] Starting base reference selection, current: ${currentSelection || 'none'}`);
 
         const selectedRepository = await this.selectRepository();
-        console.log(`[GitBranchPicker] Selected repository: ${selectedRepository?.rootUri.fsPath || 'none'}`);
+        log.debug(`[GitBranchPicker] Selected repository: ${selectedRepository?.rootUri.fsPath || 'none'}`);
 
         // Build special comparison options
         const specialComparisonItems = this.createSpecialComparisonItems(selectedRepository);
-        console.log(`[GitBranchPicker] Created ${specialComparisonItems.length} special comparison items`);
+        log.debug(`[GitBranchPicker] Created ${specialComparisonItems.length} special comparison items`);
 
         // Build remote branch options
         const remoteBranchItems = await this.createRemoteBranchItems(selectedRepository);
-        console.log(`[GitBranchPicker] Created ${remoteBranchItems.length} remote branch items`);
+        log.debug(`[GitBranchPicker] Created ${remoteBranchItems.length} remote branch items`);
 
         // Combine all picker items
         const allPickerItems: (vscode.QuickPickItem & { value: string })[] = [
@@ -119,7 +120,7 @@ export class GitBranchPicker {
             }
         ];
 
-        console.log(`[GitBranchPicker] Showing picker with ${allPickerItems.length} total items`);
+        log.debug(`[GitBranchPicker] Showing picker with ${allPickerItems.length} total items`);
 
         const selectedItem = await vscode.window.showQuickPick(allPickerItems, {
             placeHolder: selectedRepository
@@ -129,18 +130,18 @@ export class GitBranchPicker {
         });
 
         if (!selectedItem) {
-            console.log('[GitBranchPicker] User cancelled selection');
+            log.debug('[GitBranchPicker] User cancelled selection');
             return undefined;
         }
 
-        console.log(`[GitBranchPicker] User selected: ${selectedItem.label} (value: ${selectedItem.value})`);
+        log.info(`[GitBranchPicker] User selected: ${selectedItem.label} (value: ${selectedItem.value})`);
 
         // Handle manual entry
         if (selectedItem.value === '__manual__') {
             return await this.handleManualReferenceEntry(currentSelection);
         }
 
-        console.log(`[GitBranchPicker] Returning selected value: ${selectedItem.value}`);
+        log.debug(`[GitBranchPicker] Returning selected value: ${selectedItem.value}`);
         return selectedItem.value;
     }
 
@@ -159,14 +160,14 @@ export class GitBranchPicker {
      */
     private async createRemoteBranchItems(repository?: Repository): Promise<(vscode.QuickPickItem & { value: string })[]> {
         if (!repository) {
-            console.log('[GitBranchPicker] No repository provided for remote branch items');
+            log.debug('[GitBranchPicker] No repository provided for remote branch items');
             return [];
         }
 
         try {
-            console.log('[GitBranchPicker] Fetching remote branches');
+            log.debug('[GitBranchPicker] Fetching remote branches');
             const remoteBranches = await repository.getBranches({ remote: true }) as Ref[];
-            console.log(`[GitBranchPicker] Found ${remoteBranches.length} remote branches`);
+            log.debug(`[GitBranchPicker] Found ${remoteBranches.length} remote branches`);
 
             const filteredAndMappedBranches = remoteBranches
                 .filter(branch => branch.name && branch.name.startsWith('origin/'))
@@ -190,11 +191,11 @@ export class GitBranchPicker {
                     return branchA.value.localeCompare(branchB.value);
                 });
 
-            console.log(`[GitBranchPicker] Created ${filteredAndMappedBranches.length} remote branch items`);
+            log.debug(`[GitBranchPicker] Created ${filteredAndMappedBranches.length} remote branch items`);
             return filteredAndMappedBranches;
 
         } catch (error) {
-            console.warn('[GitBranchPicker] Failed to fetch remote branches:', error);
+            log.warn('[GitBranchPicker] Failed to fetch remote branches:', error);
             return [];
         }
     }
@@ -215,16 +216,16 @@ export class GitBranchPicker {
      */
     private async selectRepository(): Promise<Repository | undefined> {
         if (!this.gitApi || this.gitApi.repositories.length === 0) {
-            console.log('[GitBranchPicker] No Git repositories available');
+            log.warn('[GitBranchPicker] No Git repositories available');
             return undefined;
         }
 
-        console.log(`[GitBranchPicker] Found ${this.gitApi.repositories.length} Git repositories`);
+        log.debug(`[GitBranchPicker] Found ${this.gitApi.repositories.length} Git repositories`);
 
         // Single repository - use it automatically
         if (this.gitApi.repositories.length === 1) {
             const repository = this.gitApi.repositories[0];
-            console.log(`[GitBranchPicker] Auto-selecting single repository: ${repository.rootUri.fsPath}`);
+            log.debug(`[GitBranchPicker] Auto-selecting single repository: ${repository.rootUri.fsPath}`);
             return repository;
         }
 
@@ -232,7 +233,7 @@ export class GitBranchPicker {
         const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
         if (workspaceFolders.length === 1) {
             const workspacePath = this.normalizeFileSystemPath(workspaceFolders[0].uri.fsPath);
-            console.log(`[GitBranchPicker] Looking for repository matching workspace: ${workspacePath}`);
+            log.debug(`[GitBranchPicker] Looking for repository matching workspace: ${workspacePath}`);
 
             const matchingRepository = this.gitApi.repositories.find((repository: Repository) => {
                 const repositoryPath = this.normalizeFileSystemPath(repository.rootUri.fsPath);
@@ -241,13 +242,13 @@ export class GitBranchPicker {
             });
 
             if (matchingRepository) {
-                console.log(`[GitBranchPicker] Found matching repository: ${matchingRepository.rootUri.fsPath}`);
+                log.debug(`[GitBranchPicker] Found matching repository: ${matchingRepository.rootUri.fsPath}`);
                 return matchingRepository;
             }
         }
 
         // Multiple repositories - prompt user to choose
-        console.log('[GitBranchPicker] Prompting user to select repository');
+        log.debug('[GitBranchPicker] Prompting user to select repository');
         const repositoryPickerItems = this.gitApi.repositories.map((repository: Repository) => ({
             label: vscode.workspace.asRelativePath(repository.rootUri, false),
             description: repository.rootUri.fsPath,
@@ -259,9 +260,9 @@ export class GitBranchPicker {
         });
 
         if (selectedItem) {
-            console.log(`[GitBranchPicker] User selected repository: ${selectedItem.repository.rootUri.fsPath}`);
+            log.debug(`[GitBranchPicker] User selected repository: ${selectedItem.repository.rootUri.fsPath}`);
         } else {
-            console.log('[GitBranchPicker] User cancelled repository selection');
+            log.debug('[GitBranchPicker] User cancelled repository selection');
         }
 
         return selectedItem?.repository;
@@ -312,7 +313,7 @@ export class GitBranchPicker {
         if (repository) {
             const currentBranch = repository.state.HEAD;
             if (currentBranch?.name) {
-                console.log(`[GitBranchPicker] Adding branch origin option for: ${currentBranch.name}`);
+                log.debug(`[GitBranchPicker] Adding branch origin option for: ${currentBranch.name}`);
                 specialItems.push({
                     label: `$(git-branch) Current Branch Origin`,
                     description: `Show all changes since '${currentBranch.name}' was created`,
@@ -320,7 +321,7 @@ export class GitBranchPicker {
                 });
             }
 
-            console.log('[GitBranchPicker] Adding main development branch option');
+            log.debug('[GitBranchPicker] Adding main development branch option');
             specialItems.push({
                 label: `$(git-merge) Main Development Branch`,
                 description: `Show changes since branching from main/master/dev/develop`,
@@ -338,7 +339,7 @@ export class GitBranchPicker {
      * @returns The manually entered reference or undefined if cancelled
      */
     private async handleManualReferenceEntry(currentSelection?: string): Promise<string | undefined> {
-        console.log('[GitBranchPicker] Handling manual reference entry');
+        log.debug('[GitBranchPicker] Handling manual reference entry');
 
         const defaultValue = currentSelection?.startsWith('origin/') ? currentSelection : 'origin/';
         const selectionRange: [number, number] = currentSelection?.startsWith('origin/')
@@ -352,9 +353,9 @@ export class GitBranchPicker {
         });
 
         if (manualEntry !== undefined) {
-            console.log(`[GitBranchPicker] User entered manual reference: ${manualEntry || '(empty - disable)'}`);
+            log.info(`[GitBranchPicker] User entered manual reference: ${manualEntry || '(empty - disable)'}`);
         } else {
-            console.log('[GitBranchPicker] User cancelled manual entry');
+            log.debug('[GitBranchPicker] User cancelled manual entry');
         }
 
         return manualEntry;
