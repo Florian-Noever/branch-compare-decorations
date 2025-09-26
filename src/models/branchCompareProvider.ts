@@ -17,7 +17,42 @@ const normFs = (p: string) => {
     return isWindows ? abs.toLowerCase() : abs;
 };
 
-type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C' | 'U' | 'T' | 'X' | '?';
+const CATEGORY_PRESETS: Record<ChangeCategory, { badge: string; colorKey: GitDecorationColorKey }> = {
+    added: { badge: 'A', colorKey: 'gitDecoration.addedResourceForeground' },
+    modified: { badge: 'M', colorKey: 'gitDecoration.modifiedResourceForeground' },
+    deleted: { badge: 'D', colorKey: 'gitDecoration.deletedResourceForeground' },
+    renamed: { badge: 'R', colorKey: 'gitDecoration.renamedResourceForeground' },
+    conflicted: { badge: 'U', colorKey: 'gitDecoration.conflictingResourceForeground' },
+    untracked: { badge: '?', colorKey: 'gitDecoration.untrackedResourceForeground' },
+    ignored: { badge: '!', colorKey: 'gitDecoration.ignoredResourceForeground' },
+    copied: { badge: 'C', colorKey: 'gitDecoration.modifiedResourceForeground' }, // closest fit
+};
+
+const STATUS_PRESETS: Partial<Record<Status, ChangeCategory>> = {
+    // Index changes
+    [Status.INDEX_ADDED]: 'added',
+    [Status.INDEX_MODIFIED]: 'modified',
+    [Status.INDEX_DELETED]: 'deleted',
+    [Status.INDEX_RENAMED]: 'renamed',
+    [Status.INDEX_COPIED]: 'copied',
+
+    // Working tree changes
+    [Status.MODIFIED]: 'modified',
+    [Status.DELETED]: 'deleted',
+    [Status.UNTRACKED]: 'untracked',
+    [Status.IGNORED]: 'ignored',
+    [Status.INTENT_TO_ADD]: 'untracked',
+    [Status.TYPE_CHANGED]: 'modified',
+
+    // Merge/conflict states
+    [Status.ADDED_BY_US]: 'conflicted',
+    [Status.ADDED_BY_THEM]: 'conflicted',
+    [Status.DELETED_BY_US]: 'conflicted',
+    [Status.DELETED_BY_THEM]: 'conflicted',
+    [Status.BOTH_ADDED]: 'conflicted',
+    [Status.BOTH_DELETED]: 'conflicted',
+    [Status.BOTH_MODIFIED]: 'conflicted',
+};
 
 /**
  * Provides file decorations to indicate changes between the current branch and a base reference.
@@ -39,8 +74,8 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     // PRIVATE PROPERTIES
     // ============================================================================
 
-    /** Map of file paths to their change status (A/M/D/R) */
-    private readonly changedFiles = new Map<string, ChangeStatus>();
+    /** Map of file paths to their change category (A/M/D/R) */
+    private readonly changedFiles = new Map<string, ChangeCategory>();
 
     /** Set of file paths that had changes in the previous refresh cycle */
     private readonly lastChangedKeys = new Set<string>();
@@ -432,7 +467,8 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             // Convert impacted files to URIs and include parent directories for propagation
             const impactedUris: vscode.Uri[] = [];
             for (const filePath of impactedFilePaths) {
-                impactedUris.push(this.convertPathToUri(filePath));
+                const uri = this.convertPathToUri(filePath);
+                impactedUris.push(uri);
 
                 // Add parent directories within workspace for decoration propagation
                 for (const parentUri of this.getParentDirectoriesWithinWorkspace(filePath)) {
@@ -441,11 +477,18 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             }
 
             // Fire decoration change events
-            if (impactedUris.length === 0) {
+            if (impactedUris.length === 0 || impactedUris.length > 500) {
                 log.trace('[BranchCompareProvider] No decoration changes detected');
                 this._onDidChangeDecorations.fire(undefined);
             } else {
                 log.debug(`[BranchCompareProvider] Firing decoration changes for ${impactedUris.length} URIs`);
+
+                const alFilesChanged = impactedUris.filter(uri => uri.fsPath.endsWith('.al'));
+
+                if (alFilesChanged.length !== 0) {
+                    log.debug(`[BranchCompareProvider] AL file changes detected`);
+                }
+
                 this._onDidChangeDecorations.fire(impactedUris);
             }
         }
@@ -477,48 +520,36 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     async provideFileDecoration(uri: vscode.Uri): Promise<vscode.FileDecoration | undefined> {
         // Skip decoration if provider is disabled
         if (this.isProviderDisabled()) {
-            return undefined;
+            return;
         }
 
         // Convert URI to normalized absolute path for lookup
         const normalizedPath = normFs(uri.fsPath);
-        const changeStatus = this.changedFiles.get(normalizedPath);
+        let category = this.changedFiles.get(normalizedPath);
 
-        if (!changeStatus) {
-            return undefined;
+        if (!category) {
+            const hasContainingFile = [...this.changedFiles.keys()].some(f => f.startsWith(normalizedPath));
+            if (!hasContainingFile) {
+                return;
+            }
+        }
+        category ??= STATUS_PRESETS[Status.INDEX_MODIFIED]; // Fallback for parent dirs
+        if (!category) {
+            return;
         }
 
         // Map change status to appropriate VS Code theme colors
-        const themeColorKey = this.getThemeColorForChangeStatus(changeStatus);
+        const { badge, colorKey } = CATEGORY_PRESETS[category];
         const currentBaseRef = BaseRefUtils.getCurrBaseRef();
 
-        log.trace(`[BranchCompareProvider] Providing decoration for ${path.basename(uri.fsPath)}: ${changeStatus}`);
+        log.trace(`[BranchCompareProvider] Providing decoration for ${path.basename(uri.fsPath)}: ${category}`);
 
         return {
-            badge: changeStatus,                                   // Single-letter badge (A/M/D/R)
-            tooltip: `Changes vs ${currentBaseRef}`,               // Tooltip showing comparison reference
-            color: new vscode.ThemeColor(themeColorKey),           // Theme-appropriate color
-            propagate: true                                        // Propagate decoration to parent folders
+            badge: badge,                                  // Single-letter badge (A/M/D/R)
+            tooltip: `Changes vs ${currentBaseRef}`,       // Tooltip showing comparison reference
+            color: new vscode.ThemeColor(colorKey),        // Theme-appropriate color
+            propagate: true                                // Propagate decoration to parent folders
         };
-    }
-
-    /**
-     * Maps a change status to the appropriate VS Code theme color key.
-     *
-     * @param status - The change status (A/M/D/R)
-     * @returns Theme color key for the status
-     */
-    private getThemeColorForChangeStatus(status: ChangeStatus): string {
-        switch (status) {
-            case 'A':
-                return 'gitDecoration.addedResourceForeground';
-            case 'D':
-                return 'gitDecoration.deletedResourceForeground';
-            case 'R':
-                return 'gitDecoration.renamedResourceForeground';
-            default:
-                return 'gitDecoration.modifiedResourceForeground';
-        }
     }
 
     // ============================================================================
@@ -635,7 +666,9 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         log.debug(`[BranchCompareProvider] Computing diff: ${finalComparisonReference}..HEAD`);
         const fileChanges = await repository.diffBetween(finalComparisonReference, 'HEAD');
-        await Promise.all(fileChanges.map(c => this.processFileChange(c)));
+        for (const change of fileChanges) {
+            this.processFileChange(change);
+        }
     }
 
     // ============================================================================
@@ -954,53 +987,36 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     // ============================================================================
 
     /**
-     * Processes a single file change and updates the decoration map.
+     * Processes a single file change and updates the changed files map.
      *
-     * Handles different change types including renames, additions, deletions, and modifications.
-     * For renames, both the old and new file paths are marked with 'R' status.
-     *
-     * @param fileChange - The file change object from Git diff
+     * @param change - The file change object from Git
      */
-    private async processFileChange(fileChange: Change): Promise<void> {
-        // Handle renames: mark both old and new file paths
-        if (fileChange.status === Status.INDEX_RENAMED && fileChange.renameUri) {
-            const newFilePath = normFs(fileChange.uri.fsPath);
-            const oldFilePath = normFs(fileChange.renameUri.fsPath);
-
-            log.trace(`[BranchCompareProvider] Processing rename: ${oldFilePath} -> ${newFilePath}`);
-
-            this.changedFiles.set(newFilePath, 'R');
-            this.changedFiles.set(oldFilePath, 'R');
-            return;
+    private processFileChange(change: Change) {
+        const category = this.categoryFromStatus(change.status, change.renameUri);
+        log.trace(`[BranchCompareProvider] Processing change: ${path.basename(change.uri.fsPath)} (${category})`);
+        this.changedFiles.set(normFs(change.uri.fsPath), category);
+        if (change.renameUri && change.originalUri !== change.renameUri) {
+            this.changedFiles.set(normFs(change.renameUri.fsPath), 'renamed');
         }
-
-        // Map Git status to our change status badge
-        const changeStatus = this.mapGitStatusToChangeStatus(fileChange.status);
-        const normalizedFilePath = normFs(fileChange.uri.fsPath);
-
-        log.trace(`[BranchCompareProvider] Processing change: ${path.basename(fileChange.uri.fsPath)} (${changeStatus})`);
-        this.changedFiles.set(normalizedFilePath, changeStatus);
     }
 
     /**
-     * Maps Git file status to our simplified change status.
+     * Maps Git status and rename URI to our simplified change category.
      *
-     * @param gitStatus - The Git status from the change object
-     * @returns The simplified change status for decoration
+     * @param status - The Git status from the change object
+     * @param renameUri - The rename URI if the file was renamed
+     * @returns The simplified change category for decoration
      */
-    private mapGitStatusToChangeStatus(gitStatus: Status): ChangeStatus {
-        if (gitStatus === Status.DELETED || gitStatus === Status.INDEX_DELETED) {
-            return 'D';
+    categoryFromStatus(status: Status, renameUri?: vscode.Uri): ChangeCategory {
+        if (status === Status.INDEX_RENAMED && renameUri) {
+            return STATUS_PRESETS[Status.INDEX_RENAMED] ?? 'renamed';
         }
 
-        if (gitStatus === Status.ADDED_BY_US ||
-            gitStatus === Status.INDEX_ADDED ||
-            gitStatus === Status.UNTRACKED ||
-            gitStatus === Status.INTENT_TO_ADD) {
-            return 'A';
+        const direct = STATUS_PRESETS[status];
+        if (direct) {
+            return direct;
         }
 
-        // All other statuses are treated as modifications
-        return 'M';
+        return STATUS_PRESETS[Status.INDEX_MODIFIED] ?? 'modified';
     }
 }
