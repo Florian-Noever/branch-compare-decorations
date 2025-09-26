@@ -3,7 +3,7 @@
   "displayName": "Branch Compare",
   "publisher": "der-floh",
   "description": "Select to which branch git compares to display its colordecorations.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "icon": "assets/icon-x512.png",
   "preview": true,
   "repository": {
