@@ -5,6 +5,10 @@ import { Status } from '../git';
 import { CONFIG_AUTOFETCH, CONFIG_BASEREFS, EXTENSION } from '../extension';
 import { BaseRefUtils } from '../utils/baseRefUtils';
 import { GitUtils } from '../utils/gitUtils';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 const isWindows = process.platform === 'win32';
 const normFs = (p: string) => {
@@ -22,6 +26,19 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
     private git?: GitAPI;
 
+    private repoSubscriptions = new Map<Repository, vscode.Disposable[]>();
+
+    private refreshing = false;
+    private refreshQueued = false;
+    private refreshDebounce?: NodeJS.Timeout;
+
+    private fetchCooldownMs = 30_000;
+    private lastFetchByRepoRef = new Map<string, number>();
+
+    private get autoFetch(): boolean {
+        return vscode.workspace.getConfiguration(EXTENSION).get<boolean>(CONFIG_AUTOFETCH, true);
+    }
+
     constructor() {
         // Grab the built-in Git API
         this.git = GitUtils.getGitApi();
@@ -29,38 +46,41 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         // React to config changes
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration(EXTENSION + '.' + CONFIG_BASEREFS) || e.affectsConfiguration(EXTENSION + '.' + CONFIG_AUTOFETCH)) {
-                this.refresh();
+                this.scheduleRefresh();
             }
         });
 
         // Refresh on typical change triggers
-        vscode.workspace.onDidSaveTextDocument(this.refresh);
-        vscode.workspace.onDidCreateFiles(this.refresh);
-        vscode.workspace.onDidDeleteFiles(this.refresh);
-        vscode.workspace.onDidRenameFiles(this.refresh);
+        vscode.workspace.onDidSaveTextDocument(() => this.scheduleRefresh());
+        vscode.workspace.onDidCreateFiles(() => this.scheduleRefresh());
+        vscode.workspace.onDidDeleteFiles(() => this.scheduleRefresh());
+        vscode.workspace.onDidRenameFiles(() => this.scheduleRefresh());
 
         // Handle existing repositories that were opened before extension activation
         if (this.git) {
             // Subscribe to existing repositories
-            for (const repo of this.git.repositories) {
-                this.subscribeToRepository(repo);
+            if (this.git.repositories.length !== 0) {
+                for (const repo of this.git.repositories) {
+                    console.log('Branch Compare: Repository found: ' + repo.rootUri.fsPath);
+                    this.subscribeToRepository(repo);
+                }
+                this.scheduleRefresh(); // Initial refresh
             }
 
             // Subscribe to future repository openings
             this.git.onDidOpenRepository?.((repo: Repository) => {
+                console.log('Branch Compare: Repository opened: ' + repo.rootUri.fsPath);
                 this.subscribeToRepository(repo);
-                this.refresh(); // Refresh when new repo is opened
+                this.scheduleRefresh(); // Refresh when new repo is opened
             });
 
             // Subscribe to repository closings
-            this.git.onDidCloseRepository?.(() => {
-                this.refresh(); // Refresh when repo is closed
+            this.git.onDidCloseRepository?.((repo: Repository) => {
+                console.log('Branch Compare: Repository closed: ' + repo.rootUri.fsPath);
+                this.unsubscribeFromRepository(repo);
+                this.scheduleRefresh(); // Refresh when repo is closed
             });
         }
-    }
-
-    private get autoFetch(): boolean {
-        return vscode.workspace.getConfiguration(EXTENSION).get<boolean>(CONFIG_AUTOFETCH, true);
     }
 
     private toUri(p: string) {
@@ -72,16 +92,61 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         return !currBaseRef || currBaseRef.trim().length === 0;
     }
 
+    private scheduleRefresh(delay = 150) {
+        clearTimeout(this.refreshDebounce);
+        this.refreshDebounce = setTimeout(() => this.refresh(), delay);
+    }
+
     private subscribeToRepository(repo: Repository) {
-        if ((repo as any).__branchCompareSubscribed) {
+        if (this.repoSubscriptions.has(repo)) {
             return;
         }
-        (repo as any).__branchCompareSubscribed = true;
 
-        repo.state.onDidChange(() => this.refresh());
-        repo.onDidCheckout?.(() => this.refresh());
-        repo.onDidCommit?.(() => this.refresh());
+        const subs: vscode.Disposable[] = [];
+
+        const repoSub = repo.state.onDidChange(() => {
+            console.log('Branch Compare: Repository state changed: ' + repo.rootUri.fsPath);
+            this.scheduleRefresh();
+        });
+
+        if (repoSub) {
+            subs.push(repoSub);
+        }
+
+        const checkOut = repo.onDidCheckout?.(() => {
+            console.log('Branch Compare: Repository checked out: ' + repo.rootUri.fsPath);
+            this.scheduleRefresh();
+        });
+        if (checkOut) {
+            subs.push(checkOut);
+        }
+
+        const commit = repo.onDidCommit?.(() => {
+            console.log('Branch Compare: Repository committed: ' + repo.rootUri.fsPath);
+            this.scheduleRefresh();
+        });
+        if (commit) {
+            subs.push(commit);
+        }
+
+        this.repoSubscriptions.set(repo, subs);
     }
+
+    private unsubscribeFromRepository(repo: Repository) {
+        const subs = this.repoSubscriptions.get(repo);
+        if (!subs) {
+            return;
+        }
+
+        for (const d of subs) {
+            try {
+                console.log('Branch Compare: Unsubscribing from: ' + repo.rootUri.fsPath);
+                d.dispose();
+            } catch { }
+        }
+        this.repoSubscriptions.delete(repo);
+    }
+
 
     private parentsWithinWorkspace(absPath: string): vscode.Uri[] {
         const uriList: vscode.Uri[] = [];
@@ -109,35 +174,50 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
     /** External callers can force a refresh. */
     public async refresh() {
-        const changedBefore = new Set(this.lastKeys);
-        await this.computeAllWorkspaceChanges();
+        if (this.refreshing) {
+            this.refreshQueued = true;
+            return;
+        }
+        this.refreshing = true;
 
-        const changedNow = new Set(this.changed.keys());
-        const impacted = new Set<string>();
+        try {
+            const changedBefore = new Set(this.lastKeys);
+            await this.computeAllWorkspaceChanges();
 
-        for (const k of changedNow) {
-            if (!changedBefore.has(k)) {
-                impacted.add(k);
+            const changedNow = new Set(this.changed.keys());
+            const impacted = new Set<string>();
+
+            for (const k of changedNow) {
+                if (!changedBefore.has(k)) {
+                    impacted.add(k);
+                }
+            }
+            for (const k of changedBefore) {
+                if (!changedNow.has(k)) {
+                    impacted.add(k);
+                }
+            }
+
+            const impactedUris: vscode.Uri[] = [];
+            for (const k of impacted) {
+                impactedUris.push(this.toUri(k));
+                for (const par of this.parentsWithinWorkspace(k)) {
+                    impactedUris.push(par);
+                }
+            }
+
+            if (impactedUris.length === 0) {
+                this._onDidChange.fire(undefined);
+            } else {
+                this._onDidChange.fire(impactedUris);
             }
         }
-        for (const k of changedBefore) {
-            if (!changedNow.has(k)) {
-                impacted.add(k);
+        finally {
+            this.refreshing = false;
+            if (this.refreshQueued) {
+                this.refreshQueued = false;
+                this.scheduleRefresh(50);
             }
-        }
-
-        const impactedUris: vscode.Uri[] = [];
-        for (const k of impacted) {
-            impactedUris.push(this.toUri(k));
-            for (const par of this.parentsWithinWorkspace(k)) {
-                impactedUris.push(par);
-            }
-        }
-
-        if (impactedUris.length === 0) {
-            this._onDidChange.fire(undefined);
-        } else {
-            this._onDidChange.fire(impactedUris);
         }
     }
 
@@ -206,79 +286,128 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         }
 
         try {
-            let baseRef = BaseRefUtils.getCurrBaseRef();
-
-            // Handle special branch origin comparison
-            if (baseRef === '__branch_origin__') {
-                const currentBranch = repo.state.HEAD;
-                if (currentBranch?.name) {
-                    const divergencePoint = await this.findCurrentBranchCreationPoint(repo, currentBranch.name);
-                    if (divergencePoint) {
-                        baseRef = divergencePoint;
-                    } else {
-                        // Fallback to main/master
-                        baseRef = await this.findMainDevelopmentBranch(repo) || 'origin/dev';
-                    }
-                }
-            } else if (baseRef === '__main_origin__') {
-                // Find and use the main development branch
-                baseRef = await this.findMainDevelopmentBranch(repo) || 'origin/dev';
+            const headName = repo.state.HEAD?.name;
+            if (!headName) {
+                return;
             }
 
-            // Keep base ref fresh (e.g., 'origin/main')
-            if (this.autoFetch && baseRef.includes('/')) { //todo Check
-                const [remote, ...refParts] = baseRef.split('/');
+            let raw: string | null = BaseRefUtils.getCurrBaseRef();
+            const upstreamRef = this.getUpstreamRef(repo);
+
+            if (raw === '__branch_origin__') {
+                raw = upstreamRef ?? raw;
+            }
+            if (raw === '__main_origin__') {
+                const mainDevBranch = await this.findMainDevelopmentBranch(repo);
+                raw = mainDevBranch ?? 'origin/main';
+            }
+
+            const sameBranchChosen =
+                raw === upstreamRef || raw === headName || raw === repo.state.HEAD?.upstream?.name;
+
+            let baselineSha: string | undefined | null;
+
+            if (sameBranchChosen) {
+                // Use mainish bases to find the branch creation point (stable)
+                const bases = await this.mainishCandidates(repo);
+                baselineSha = await this.pickForkPointFromBases(repo, headName, bases);
+            } else if (typeof raw === 'string') {
+                // User picked some other branch/ref -> fork-point vs that ref
+                baselineSha = await this.forkPointOrMergeBase(repo, raw, headName);
+            }
+
+            let compareLeft = baselineSha ?? raw ?? 'origin/main';
+
+            // Keep base ref fresh
+            if (this.autoFetch && typeof raw === 'string' && raw.includes('/')) {
+                const [remote, ...refParts] = raw.split('/');
                 const remoteRef = refParts.join('/');
                 if (remote && remoteRef) {
-                    await repo.fetch(remote, remoteRef).catch(() => { });
-                    await new Promise(resolve => setTimeout(resolve, 100)); // wait a bit for the repo to refresh its state
-                }
-            }
-
-            // If comparing local branch to its origin, find the actual divergence point
-            const currentBranch = repo.state.HEAD;
-            if (currentBranch?.name && baseRef !== currentBranch.name) {
-                const creationPoint = await this.findBranchCreationPoint(repo, currentBranch.name, baseRef);
-                if (creationPoint) {
-                    baseRef = creationPoint;
+                    const key = `${normFs(repo.rootUri.fsPath)}#${remote}/${remoteRef}`;
+                    const now = Date.now();
+                    if ((this.lastFetchByRepoRef.get(key) ?? 0) < now - this.fetchCooldownMs) {
+                        await repo.fetch(remote, remoteRef).catch(() => { });
+                        this.lastFetchByRepoRef.set(key, now);
+                    }
                 }
             }
 
             // List file-level changes between base and HEAD
-            const changes = await repo.diffBetween(baseRef, 'HEAD');
+            const changes = await repo.diffBetween(compareLeft, 'HEAD');
             await Promise.all(changes.map(change => this.handleChange(change)));
         } catch {
             // Ignore repo errors (non-git folder, detached states, etc.)
         }
     }
 
-    private async findCurrentBranchCreationPoint(repo: Repository, currentBranch: string): Promise<string | null> {
+    private getUpstreamRef(repo: Repository): string | undefined {
+        const up = repo.state.HEAD?.upstream;
+        if (!up?.name) {
+            return undefined;
+        }
+        return up.remote ? `${up.remote}/${up.name}` : up.name;
+    }
+
+    private async mainishCandidates(repo: Repository): Promise<string[]> {
+        const common = ['origin/main', 'origin/dev', 'origin/develop', 'origin/master', 'main', 'dev', 'develop', 'master'];
         try {
-            // Try to find common ancestor with main branches
-            const commonBaseBranches = ['dev', 'develop', 'main', 'master'];
-
-            for (const baseBranch of commonBaseBranches) {
-                const candidates = [`origin/${baseBranch}`, baseBranch];
-
-                for (const candidate of candidates) {
-                    try {
-                        const mergeBase = await repo.getMergeBase(candidate, currentBranch);
-                        if (mergeBase) {
-                            // Verify this is actually a divergence point, not the current commit
-                            const currentCommit = repo.state.HEAD?.commit;
-                            if (mergeBase !== currentCommit) {
-                                return mergeBase;
-                            }
-                        }
-                    } catch {
-                        continue;
-                    }
-                }
-            }
-
-            return null;
+            const remotes = await repo.getBranches({ remote: true }) as Ref[];
+            const have = new Set(remotes.map(r => r.name));
+            // keep candidates that exist, but also keep locals as fallback
+            return common.filter(c => have.has(c) || !c.startsWith('origin/'));
         } catch {
-            return null;
+            return common;
+        }
+    }
+
+    private async commitTimestamp(repo: Repository, sha: string): Promise<number> {
+        const cwd = repo.rootUri.fsPath;
+        const gitPath = (this.git as any)?.git?.path ?? 'git';
+        try {
+            const { stdout } = await execFileAsync(gitPath, ['show', '-s', '--format=%ct', sha], { cwd });
+            const n = Number(stdout.trim());
+            return isNaN(n) ? -1 : n;
+        } catch {
+            return -1;
+        }
+    }
+
+    private async pickForkPointFromBases(repo: Repository, branch: string, bases: string[]): Promise<string | null> {
+        let bestSha: string | null = null;
+        let bestTs = -1;
+        for (const base of bases) {
+            const sha = await this.forkPointOrMergeBase(repo, base, branch);
+            if (!sha) {
+                continue;
+            }
+            const ts = await this.commitTimestamp(repo, sha);
+            if (ts > bestTs) {
+                bestTs = ts;
+                bestSha = sha;
+            }
+        }
+        return bestSha;
+    }
+
+    private async forkPointOrMergeBase(repo: Repository, baseRef: string, branch: string): Promise<string | undefined> {
+        const cwd = repo.rootUri.fsPath;
+        const gitPath = (this.git as any)?.git?.path ?? 'git';
+
+        // Best effort: fork-point
+        try {
+            const command = ['merge-base', '--fork-point', baseRef, branch].join(' ');
+            const { stdout } = await execFileAsync(gitPath, ['merge-base', '--fork-point', baseRef, branch], { cwd });
+            const sha = stdout.trim();
+            if (sha) {
+                return sha;
+            }
+        } catch { }
+
+        // Fallback: plain merge-base
+        try {
+            return await repo.getMergeBase(baseRef, branch);
+        } catch {
+            return undefined;
         }
     }
 
@@ -306,27 +435,6 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         }
     }
 
-    private async findBranchCreationPoint(repo: Repository, currentBranch: string, targetBaseRef: string): Promise<string | null> {
-        try {
-            // Find the merge-base between current branch and the target base ref
-            // This gives us the commit where the current branch was created from the target branch
-            const mergeBase = await repo.getMergeBase(targetBaseRef, currentBranch);
-
-            if (mergeBase) {
-                const currentCommit = repo.state.HEAD?.commit;
-                // Only use merge-base if it's different from current commit
-                // (if they're the same, it means no changes have been made)
-                if (mergeBase !== currentCommit) {
-                    return mergeBase;
-                }
-            }
-
-            return null;
-        } catch {
-            return null;
-        }
-    }
-
     private async handleChange(change: Change) {
         // Renames: color both old & new
         if (change.status === Status.INDEX_RENAMED && change.renameUri) {
@@ -344,7 +452,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             s === Status.DELETED || s === Status.INDEX_DELETED ? 'D' :
                 s === Status.ADDED_BY_US || s === Status.INDEX_ADDED ||
                     s === Status.UNTRACKED || s === Status.INTENT_TO_ADD ? 'A' :
-            /* everything else (MODIFIED, INDEX_MODIFIED, TYPE_CHANGED, conflicts, etc.) */ 'M';
+            /* everything else */ 'M';
 
         const key = normFs(change.uri.fsPath);
         this.changed.set(key, badge);
