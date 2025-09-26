@@ -75,6 +75,9 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     /** Map tracking the last fetch time for each repository and remote reference */
     private readonly lastFetchTimestampByRepoRef = new Map<string, number>();
 
+    /** Map tracking the last known baseline for each repository */
+    private readonly baselineCache = new Map<string, string | null>();
+
     /** Gets the auto-fetch configuration setting */
     private get shouldAutoFetch(): boolean {
         return vscode.workspace.getConfiguration(EXTENSION).get<boolean>(CONFIG_AUTOFETCH, true);
@@ -224,6 +227,33 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         return isDisabled;
     }
 
+    /**
+     * Creates a cache key for the baseline comparison.
+     *
+     * @param repo - The Git repository
+     * @param headSha - The SHA of the HEAD commit
+     * @param baseRef - The base reference (branch or commit) for comparison
+     * @param upstreamRef - The upstream reference (branch or commit) for comparison
+     * @returns A unique cache key for the baseline comparison
+     */
+    private makeBaselineCacheKey(repo: Repository, headSha: string, baseRef: string | null, upstreamRef: string | undefined): string {
+        return `${normFs(repo.rootUri.fsPath)}|${headSha}|${baseRef ?? ''}|${upstreamRef ?? ''}`;
+    }
+
+    /**
+     * Invalidates all cached baseline comparisons for the specified repository.
+     *
+     * @param repo - The Git repository
+     */
+    private invalidateRepoCaches(repo: Repository) {
+        const keyPrefix = `${normFs(repo.rootUri.fsPath)}|`;
+        for (const key of [...this.baselineCache.keys()]) {
+            if (key.startsWith(keyPrefix)) {
+                this.baselineCache.delete(key);
+            }
+        }
+    }
+
     // ============================================================================
     // REFRESH MANAGEMENT
     // ============================================================================
@@ -261,6 +291,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         // Subscribe to repository state changes
         const stateSubscription = repository.state.onDidChange(() => {
             log.trace(`[BranchCompareProvider] Repository state changed: ${repository.rootUri.fsPath}`);
+            this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
 
@@ -271,6 +302,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         // Subscribe to checkout events (branch switches)
         const checkoutSubscription = repository.onDidCheckout?.(() => {
             log.debug(`[BranchCompareProvider] Repository checkout detected: ${repository.rootUri.fsPath}`);
+            this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
         if (checkoutSubscription) {
@@ -280,6 +312,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         // Subscribe to commit events
         const commitSubscription = repository.onDidCommit?.(() => {
             log.debug(`[BranchCompareProvider] Repository commit detected: ${repository.rootUri.fsPath}`);
+            this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
         if (commitSubscription) {
@@ -459,7 +492,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         const themeColorKey = this.getThemeColorForChangeStatus(changeStatus);
         const currentBaseRef = BaseRefUtils.getCurrBaseRef();
 
-        log.trace(`[BranchCompareProvider] Providing decoration for ${path.basename(uri.fsPath) }: ${changeStatus}`);
+        log.trace(`[BranchCompareProvider] Providing decoration for ${path.basename(uri.fsPath)}: ${changeStatus}`);
 
         return {
             badge: changeStatus,                                   // Single-letter badge (A/M/D/R)
@@ -512,12 +545,23 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
         log.debug(`[BranchCompareProvider] Processing ${workspaceFolders.length} workspace folders`);
 
+        // Collect unique repositories that are used by the workspace
+        const reposByRoot = new Map<string, Repository>();
+        for (const folder of workspaceFolders) {
+            const repo = this.selectRepositoryForWorkspaceFolder(folder);
+            if (repo) {
+                reposByRoot.set(normFs(repo.rootUri.fsPath), repo);
+            }
+        }
+        const uniqueRepos = [...reposByRoot.values()];
+        log.debug(`[BranchCompareProvider] Processing ${uniqueRepos.length} unique repositories`);
+
         // Process folders in parallel for better performance
         await Promise.all(
-            workspaceFolders.map(async folder => {
+            uniqueRepos.map(async repo => {
                 await this.folderSema.acquire();
                 try {
-                    await this.computeChangesForWorkspaceFolder(folder);
+                    await this.computeChangesForRepository(repo);
                 } finally {
                     this.folderSema.release();
                 }
@@ -567,70 +611,31 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     }
 
     /**
-     * Computes file changes for a specific workspace folder.
+     * Computes file changes for a specific Git repository.
      *
-     * Determines the appropriate base reference, handles special reference types,
-     * performs automatic fetching if enabled, and computes the diff between base and HEAD.
-     *
-     * @param workspaceFolder - The workspace folder to process
+     * @param repository - The Git repository to compute changes for
+     * @returns
      */
-    private async computeChangesForWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
-        const repository = this.selectRepositoryForWorkspaceFolder(workspaceFolder);
-        if (!repository) {
-            log.debug(`[BranchCompareProvider] No repository found for folder: ${workspaceFolder.uri.fsPath}`);
+    private async computeChangesForRepository(repository: Repository): Promise<void> {
+        const currentBranchName = repository.state.HEAD?.name;
+        if (!currentBranchName) {
             return;
         }
 
-        try {
-            const currentBranchName = repository.state.HEAD?.name;
-            if (!currentBranchName) {
-                log.warn(`[BranchCompareProvider] No HEAD branch found in repository: ${repository.rootUri.fsPath}`);
-                return;
-            }
+        let baseReference: string | null = BaseRefUtils.getCurrBaseRef();
+        const upstreamReference = this.getUpstreamReference(repository);
+        baseReference = await this.resolveSpecialBaseReference(baseReference, upstreamReference, repository);
 
-            log.debug(`[BranchCompareProvider] Processing repository: ${repository.rootUri.fsPath}, branch: ${currentBranchName}`);
+        // Fetch first, so the baseline uses up-to-date refs
+        await this.performAutoFetchIfNeeded(repository, baseReference);
 
-            // Get the configured base reference
-            let baseReference: string | null = BaseRefUtils.getCurrBaseRef();
-            const upstreamReference = this.getUpstreamReference(repository);
+        const finalComparisonReference = await this.getComparisonBaseline(
+            repository, currentBranchName, baseReference, upstreamReference
+        );
 
-            // Handle special base reference types
-            baseReference = await this.resolveSpecialBaseReference(baseReference, upstreamReference, repository);
-
-            // Determine if we're comparing against the same branch (requires fork-point logic)
-            const isComparingAgainstSameBranch = this.isComparingAgainstSameBranch(
-                baseReference, upstreamReference, currentBranchName, repository
-            );
-
-            let comparisonBaseline: string | undefined | null;
-
-            if (isComparingAgainstSameBranch) {
-                // Find the fork point using main development branches
-                const mainBranchCandidates = await this.getMainBranchCandidates(repository);
-                comparisonBaseline = await this.selectBestForkPointFromCandidates(repository, currentBranchName, mainBranchCandidates);
-                log.debug(`[BranchCompareProvider] Using fork-point comparison, baseline: ${comparisonBaseline}`);
-            } else if (typeof baseReference === 'string') {
-                // Direct comparison against specified reference
-                comparisonBaseline = await this.calculateForkPointOrMergeBase(repository, baseReference, currentBranchName);
-                log.debug(`[BranchCompareProvider] Using direct comparison against: ${baseReference}, baseline: ${comparisonBaseline}`);
-            }
-
-            const finalComparisonReference = comparisonBaseline ?? baseReference ?? 'origin/main';
-
-            // Perform automatic fetch if configured and needed
-            await this.performAutoFetchIfNeeded(repository, baseReference);
-
-            // Compute file changes between baseline and current HEAD
-            log.debug(`[BranchCompareProvider] Computing diff: ${finalComparisonReference}..HEAD`);
-            const fileChanges = await repository.diffBetween(finalComparisonReference, 'HEAD');
-
-            log.debug(`[BranchCompareProvider] Found ${fileChanges.length} changed files`);
-            await Promise.all(fileChanges.map((change: Change) => this.processFileChange(change)));
-
-        } catch (error) {
-            log.error(`[BranchCompareProvider] Error processing repository ${repository.rootUri.fsPath}:`, error);
-            // Continue processing other repositories even if one fails
-        }
+        log.debug(`[BranchCompareProvider] Computing diff: ${finalComparisonReference}..HEAD`);
+        const fileChanges = await repository.diffBetween(finalComparisonReference, 'HEAD');
+        await Promise.all(fileChanges.map(c => this.processFileChange(c)));
     }
 
     // ============================================================================
@@ -662,11 +667,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * @param repository - The Git repository
      * @returns The resolved base reference
      */
-    private async resolveSpecialBaseReference(
-        baseReference: string | null,
-        upstreamReference: string | undefined,
-        repository: Repository
-    ): Promise<string | null> {
+    private async resolveSpecialBaseReference(baseReference: string | null, upstreamReference: string | undefined, repository: Repository): Promise<string | null> {
         if (baseReference === '__branch_origin__') {
             const resolved = upstreamReference ?? baseReference;
             log.debug(`[BranchCompareProvider] Resolved __branch_origin__ to: ${resolved}`);
@@ -684,6 +685,41 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     }
 
     /**
+     * Gets the comparison baseline for the current branch.
+     *
+     * @param repository - The Git repository
+     * @param currentBranchName - The name of the current branch
+     * @param baseReference - The base reference for comparison
+     * @param upstreamReference - The upstream reference for comparison
+     * @returns The comparison baseline reference
+     */
+    private async getComparisonBaseline(repository: Repository, currentBranchName: string, baseReference: string | null, upstreamReference: string | undefined): Promise<string> {
+
+        const headSha = repository.state.HEAD?.commit ?? '';
+        const cacheKey = this.makeBaselineCacheKey(repository, headSha, baseReference, upstreamReference);
+        const cached = this.baselineCache.get(cacheKey);
+        if (cached) {
+            return cached ?? 'origin/main';
+        }
+
+        // Decide baseline (your existing logic, slightly refactored)
+        let comparisonBaseline: string | null | undefined;
+        const isSame = this.isComparingAgainstSameBranch(baseReference, upstreamReference, currentBranchName, repository);
+
+        if (isSame) {
+            const candidates = await this.getMainBranchCandidates(repository);
+            comparisonBaseline = await this.selectBestForkPointFromCandidates(repository, currentBranchName, candidates);
+        } else if (typeof baseReference === 'string') {
+            comparisonBaseline = await this.calculateForkPointOrMergeBase(repository, baseReference, currentBranchName);
+        }
+
+        const finalRef = (comparisonBaseline ?? baseReference ?? 'origin/main');
+        this.baselineCache.set(cacheKey, finalRef);
+        return finalRef;
+    }
+
+
+    /**
      * Determines if we're comparing against the same branch (requiring fork-point logic).
      *
      * @param baseReference - The base reference for comparison
@@ -692,12 +728,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * @param repository - The Git repository
      * @returns True if comparing against the same branch
      */
-    private isComparingAgainstSameBranch(
-        baseReference: string | null,
-        upstreamReference: string | undefined,
-        currentBranchName: string,
-        repository: Repository
-    ): boolean {
+    private isComparingAgainstSameBranch(baseReference: string | null, upstreamReference: string | undefined, currentBranchName: string, repository: Repository): boolean {
         const upstreamName = repository.state.HEAD?.upstream?.name;
         const isSameBranch = baseReference === upstreamReference ||
             baseReference === currentBranchName ||
@@ -811,11 +842,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * @param baseCandidates - Array of potential base branch references
      * @returns The SHA of the best fork point or null if none found
      */
-    private async selectBestForkPointFromCandidates(
-        repository: Repository,
-        branchName: string,
-        baseCandidates: string[]
-    ): Promise<string | null> {
+    private async selectBestForkPointFromCandidates(repository: Repository, branchName: string, baseCandidates: string[]): Promise<string | null> {
         let bestCommitSha: string | null = null;
         let bestTimestamp = -1;
 
@@ -847,11 +874,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * @param branchName - The branch name
      * @returns The SHA of the fork point/merge base or undefined if not found
      */
-    private async calculateForkPointOrMergeBase(
-        repository: Repository,
-        baseReference: string,
-        branchName: string
-    ): Promise<string | undefined> {
+    private async calculateForkPointOrMergeBase(repository: Repository, baseReference: string, branchName: string): Promise<string | undefined> {
         const workingDirectory = repository.rootUri.fsPath;
         const gitExecutablePath = (this.gitApi as any)?.git?.path ?? 'git';
 
@@ -881,7 +904,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             log.debug(`[BranchCompareProvider] Found merge base: ${baseReference}...${branchName} -> ${mergeBaseSha}`);
             return mergeBaseSha;
         } catch (error) {
-            log.error(`[BranchCompareProvider] Failed to find merge base between ${baseReference} and ${branchName}:`, error);
+            log.error(`[BranchCompareProvider] Failed to find merge base between ${baseReference} and ${branchName}:`);
             return undefined;
         }
     }
