@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { API as GitAPI, Repository, Ref } from '../git';
+import type { API as GitAPI, Repository, Ref } from '../types/git';
 import path from 'path';
 import { GitUtils } from '../utils/gitUtils';
 import { log } from '../extension';

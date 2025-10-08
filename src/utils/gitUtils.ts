@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { API, Repository } from '../git';
+import type { API, Repository } from '../types/git';
 
 export class GitUtils {
     static getGitApi(): API | undefined {

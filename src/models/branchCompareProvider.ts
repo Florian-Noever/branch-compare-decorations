@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import type { API as GitAPI, Repository, Change, Ref } from '../git';
-import { Status } from '../git';
+import type { API as GitAPI, Repository, Change, Ref } from '../types/git';
+import { Status } from '../types/git';
 import { CONFIG_AUTOFETCH, CONFIG_BASEREFS, EXTENSION, log } from '../extension';
 import { BaseRefUtils } from '../utils/baseRefUtils';
 import { GitUtils } from '../utils/gitUtils';
@@ -139,7 +139,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         if (!this.gitApi) {
             log.warn(`[${BranchCompareProvider.name}] Git API not available - decorations will be disabled`);
         } else {
-            log.info(`[${ BranchCompareProvider.name }]Git API connected successfully`);
+            log.info(`[${BranchCompareProvider.name}]Git API connected successfully`);
         }
 
         this.setupConfigurationListeners();
