@@ -5,6 +5,7 @@ import { GitUtils } from './utils/gitUtils';
 import { BaseRefUtils } from './utils/baseRefUtils';
 
 export const EXTENSION = 'branchCompare';
+export const EXTENSION_NAME = 'Branch Compare';
 export const CONFIG_BASEREFS = 'baseRefs';
 export const CONFIG_AUTOFETCH = 'autoFetch';
 export const COMMAND_REFRESH = 'refresh';
@@ -17,7 +18,7 @@ export let log: vscode.LogOutputChannel;
 
 export async function activate(context: vscode.ExtensionContext) {
 	// Output channel
-	log = vscode.window.createOutputChannel('Branch Compare', { log: true });
+	log = vscode.window.createOutputChannel(EXTENSION_NAME, { log: true });
 	context.subscriptions.push(log);
 
 	// Decorations
@@ -39,9 +40,9 @@ export function deactivate() { }
 async function refreshDecorations() {
 	try {
 		await provider!.refresh();
-		vscode.window.showInformationMessage('Branch Compare: Decorations refreshed');
+		vscode.window.showInformationMessage(`${EXTENSION_NAME}: Decorations refreshed`);
 	} catch (e: any) {
-		vscode.window.showErrorMessage(`Branch Compare: Failed to refresh decorations: ${e.message}`);
+		vscode.window.showErrorMessage(`${EXTENSION_NAME}: Failed to refresh decorations: ${e.message}`);
 	}
 }
 
@@ -54,7 +55,7 @@ async function setBaseRepo(): Promise<void> {
 		currBranchName = GitUtils.getBranchName(currBranch!) ?? '';
 		currBaseRef = BaseRefUtils.getCurrBaseRef();
 	} catch (e) {
-		vscode.window.showErrorMessage(`Branch Compare: Failed to get current repository: ${e}`);
+		vscode.window.showErrorMessage(`${EXTENSION_NAME}: Failed to get current repository: ${e}`);
 		return;
 	}
 
@@ -66,9 +67,9 @@ async function setBaseRepo(): Promise<void> {
 	await BaseRefUtils.addOrUpdateBaseRef(currBranchName, chosen);
 
 	if (!chosen.trim()) {
-		vscode.window.showInformationMessage('Branch Compare: disabled.');
+		vscode.window.showInformationMessage(`${EXTENSION_NAME}: disabled.`);
 	} else {
-		vscode.window.showInformationMessage(`Branch Compare: compare to '${chosen}'.`);
+		vscode.window.showInformationMessage(`${EXTENSION_NAME}: compare to '${chosen}'.`);
 	}
 
 	await provider?.refresh();

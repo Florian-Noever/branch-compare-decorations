@@ -132,21 +132,21 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * - Repository event subscriptions
      */
     constructor() {
-        log.info('[BranchCompareProvider] Initializing provider');
+        log.info(`[${BranchCompareProvider.name}] Initializing provider`);
 
         // Initialize Git API connection
         this.gitApi = GitUtils.getGitApi();
         if (!this.gitApi) {
-            log.warn('[BranchCompareProvider] Git API not available - decorations will be disabled');
+            log.warn(`[${BranchCompareProvider.name}] Git API not available - decorations will be disabled`);
         } else {
-            log.info('[BranchCompareProvider] Git API connected successfully');
+            log.info(`[${ BranchCompareProvider.name }]Git API connected successfully`);
         }
 
         this.setupConfigurationListeners();
         this.setupWorkspaceListeners();
         this.setupRepositoryHandling();
 
-        log.info('[BranchCompareProvider] Provider initialization completed');
+        log.info(`[${BranchCompareProvider.name}] Provider initialization completed`);
     }
 
     // ============================================================================
@@ -162,7 +162,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             const affectsAutoFetch = configChangeEvent.affectsConfiguration(`${EXTENSION}.${CONFIG_AUTOFETCH}`);
 
             if (affectsBaseRefs || affectsAutoFetch) {
-                log.debug('[BranchCompareProvider] Configuration changed, scheduling refresh', {
+                log.debug(`[${BranchCompareProvider.name}] Configuration changed, scheduling refresh`, {
                     baseRefs: affectsBaseRefs,
                     autoFetch: affectsAutoFetch
                 });
@@ -177,22 +177,22 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     private setupWorkspaceListeners(): void {
         // Refresh decorations when files change
         vscode.workspace.onDidSaveTextDocument(() => {
-            log.debug('[BranchCompareProvider] Document saved, scheduling refresh');
+            log.debug(`[${BranchCompareProvider.name}] Document saved, scheduling refresh`);
             this.scheduleRefresh();
         });
 
         vscode.workspace.onDidCreateFiles(() => {
-            log.debug('[BranchCompareProvider] Files created, scheduling refresh');
+            log.debug(`[${BranchCompareProvider.name}] Files created, scheduling refresh`);
             this.scheduleRefresh();
         });
 
         vscode.workspace.onDidDeleteFiles(() => {
-            log.debug('[BranchCompareProvider] Files deleted, scheduling refresh');
+            log.debug(`[${BranchCompareProvider.name}] Files deleted, scheduling refresh`);
             this.scheduleRefresh();
         });
 
         vscode.workspace.onDidRenameFiles(() => {
-            log.debug('[BranchCompareProvider] Files renamed, scheduling refresh');
+            log.debug(`[${BranchCompareProvider.name}] Files renamed, scheduling refresh`);
             this.scheduleRefresh();
         });
     }
@@ -207,10 +207,10 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         // Handle existing repositories
         if (this.gitApi.repositories.length > 0) {
-            log.debug(`[BranchCompareProvider] Found ${this.gitApi.repositories.length} existing repositories`);
+            log.debug(`[${BranchCompareProvider.name}] Found ${this.gitApi.repositories.length} existing repositories`);
 
             for (const repository of this.gitApi.repositories) {
-                log.debug(`[BranchCompareProvider] Subscribing to existing repository: ${repository.rootUri.fsPath}`);
+                log.debug(`[${BranchCompareProvider.name}] Subscribing to existing repository: ${repository.rootUri.fsPath}`);
                 this.subscribeToRepository(repository);
             }
 
@@ -219,14 +219,14 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         // Handle future repository openings
         this.gitApi.onDidOpenRepository?.((repository: Repository) => {
-            log.info(`[BranchCompareProvider] New repository opened: ${repository.rootUri.fsPath}`);
+            log.info(`[${BranchCompareProvider.name}] New repository opened: ${repository.rootUri.fsPath}`);
             this.subscribeToRepository(repository);
             this.scheduleRefresh();
         });
 
         // Handle repository closings
         this.gitApi.onDidCloseRepository?.((repository: Repository) => {
-            log.info(`[BranchCompareProvider] Repository closed: ${repository.rootUri.fsPath}`);
+            log.info(`[${BranchCompareProvider.name}] Repository closed: ${repository.rootUri.fsPath}`);
             this.unsubscribeFromRepository(repository);
             this.scheduleRefresh();
         });
@@ -256,7 +256,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         const isDisabled = !currentBaseReference || currentBaseReference.trim().length === 0;
 
         if (isDisabled) {
-            log.debug('[BranchCompareProvider] Provider is disabled - no base reference configured');
+            log.debug(`[${BranchCompareProvider.name}] Provider is disabled - no base reference configured`);
         }
 
         return isDisabled;
@@ -299,7 +299,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * @param delayMilliseconds - Delay before executing the refresh (default: 150ms)
      */
     private scheduleRefresh(delayMilliseconds = 150): void {
-        log.trace(`[BranchCompareProvider] Scheduling refresh with ${delayMilliseconds}ms delay`);
+        log.trace(`[${BranchCompareProvider.name}] Scheduling refresh with ${delayMilliseconds}ms delay`);
 
         clearTimeout(this.refreshDebounceTimer);
         this.refreshDebounceTimer = setTimeout(() => this.refresh(), delayMilliseconds);
@@ -316,16 +316,16 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      */
     private subscribeToRepository(repository: Repository): void {
         if (this.repositorySubscriptions.has(repository)) {
-            log.debug(`[BranchCompareProvider] Already subscribed to repository: ${repository.rootUri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] Already subscribed to repository: ${repository.rootUri.fsPath}`);
             return;
         }
 
-        log.debug(`[BranchCompareProvider] Setting up subscriptions for repository: ${repository.rootUri.fsPath}`);
+        log.debug(`[${BranchCompareProvider.name}] Setting up subscriptions for repository: ${repository.rootUri.fsPath}`);
         const subscriptions: vscode.Disposable[] = [];
 
         // Subscribe to repository state changes
         const stateSubscription = repository.state.onDidChange(() => {
-            log.trace(`[BranchCompareProvider] Repository state changed: ${repository.rootUri.fsPath}`);
+            log.trace(`[${BranchCompareProvider.name}] Repository state changed: ${repository.rootUri.fsPath}`);
             this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
@@ -336,7 +336,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         // Subscribe to checkout events (branch switches)
         const checkoutSubscription = repository.onDidCheckout?.(() => {
-            log.debug(`[BranchCompareProvider] Repository checkout detected: ${repository.rootUri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] Repository checkout detected: ${repository.rootUri.fsPath}`);
             this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
@@ -346,7 +346,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
         // Subscribe to commit events
         const commitSubscription = repository.onDidCommit?.(() => {
-            log.debug(`[BranchCompareProvider] Repository commit detected: ${repository.rootUri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] Repository commit detected: ${repository.rootUri.fsPath}`);
             this.invalidateRepoCaches(repository);
             this.scheduleRefresh();
         });
@@ -355,7 +355,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         }
 
         this.repositorySubscriptions.set(repository, subscriptions);
-        log.debug(`[BranchCompareProvider] Set up ${subscriptions.length} subscriptions for repository`);
+        log.debug(`[${BranchCompareProvider.name}] Set up ${subscriptions.length} subscriptions for repository`);
     }
 
     /**
@@ -366,22 +366,22 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     private unsubscribeFromRepository(repository: Repository): void {
         const subscriptions = this.repositorySubscriptions.get(repository);
         if (!subscriptions) {
-            log.debug(`[BranchCompareProvider] No subscriptions found for repository: ${repository.rootUri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] No subscriptions found for repository: ${repository.rootUri.fsPath}`);
             return;
         }
 
-        log.debug(`[BranchCompareProvider] Cleaning up ${subscriptions.length} subscriptions for repository: ${repository.rootUri.fsPath}`);
+        log.debug(`[${BranchCompareProvider.name}] Cleaning up ${subscriptions.length} subscriptions for repository: ${repository.rootUri.fsPath}`);
 
         for (const subscription of subscriptions) {
             try {
                 subscription.dispose();
             } catch (error) {
-                log.warn(`[BranchCompareProvider] Error disposing subscription:`, error);
+                log.warn(`[${BranchCompareProvider.name}] Error disposing subscription:`, error);
             }
         }
 
         this.repositorySubscriptions.delete(repository);
-        log.debug(`[BranchCompareProvider] Successfully unsubscribed from repository: ${repository.rootUri.fsPath}`);
+        log.debug(`[${BranchCompareProvider.name}] Successfully unsubscribed from repository: ${repository.rootUri.fsPath}`);
     }
 
 
@@ -431,12 +431,12 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      */
     public async refresh(): Promise<void> {
         if (this.isCurrentlyRefreshing) {
-            log.trace('[BranchCompareProvider] Refresh already in progress, queuing new refresh');
+            log.trace(`[${BranchCompareProvider.name}] Refresh already in progress, queuing new refresh`);
             this.isRefreshQueued = true;
             return;
         }
 
-        log.debug('[BranchCompareProvider] Starting refresh cycle');
+        log.debug(`[${BranchCompareProvider.name}] Starting refresh cycle`);
         this.isCurrentlyRefreshing = true;
 
         try {
@@ -478,15 +478,15 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
             // Fire decoration change events
             if (impactedUris.length === 0 || impactedUris.length > 500) {
-                log.trace('[BranchCompareProvider] No decoration changes detected');
+                log.trace(`[${BranchCompareProvider.name}] No decoration changes detected`);
                 this._onDidChangeDecorations.fire(undefined);
             } else {
-                log.debug(`[BranchCompareProvider] Firing decoration changes for ${impactedUris.length} URIs`);
+                log.debug(`[${BranchCompareProvider.name}] Firing decoration changes for ${impactedUris.length} URIs`);
 
                 const alFilesChanged = impactedUris.filter(uri => uri.fsPath.endsWith('.al'));
 
                 if (alFilesChanged.length !== 0) {
-                    log.debug(`[BranchCompareProvider] AL file changes detected`);
+                    log.debug(`[${BranchCompareProvider.name}] AL file changes detected`);
                 }
 
                 this._onDidChangeDecorations.fire(impactedUris);
@@ -497,7 +497,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
             // Process queued refresh if one was requested during this cycle
             if (this.isRefreshQueued) {
-                log.trace('[BranchCompareProvider] Processing queued refresh');
+                log.trace(`[${BranchCompareProvider.name}] Processing queued refresh`);
                 this.isRefreshQueued = false;
                 this.scheduleRefresh(50); // Short delay for queued refresh
             }
@@ -542,7 +542,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         const { badge, colorKey } = CATEGORY_PRESETS[category];
         const currentBaseRef = BaseRefUtils.getCurrBaseRef();
 
-        log.trace(`[BranchCompareProvider] Providing decoration for ${path.basename(uri.fsPath)}: ${category}`);
+        log.trace(`[${BranchCompareProvider.name}] Providing decoration for ${path.basename(uri.fsPath)}: ${category}`);
 
         return {
             badge: badge,                                  // Single-letter badge (A/M/D/R)
@@ -563,18 +563,18 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      * Updates the tracking of previously changed files for comparison in the next cycle.
      */
     private async computeAllWorkspaceChanges(): Promise<void> {
-        log.debug('[BranchCompareProvider] Computing changes for all workspace folders');
+        log.debug(`[${BranchCompareProvider.name}] Computing changes for all workspace folders`);
         this.changedFiles.clear();
 
         // Exit early if provider is disabled or Git API is unavailable
         if (this.isProviderDisabled() || !this.gitApi) {
-            log.debug('[BranchCompareProvider] Provider disabled or Git API unavailable, clearing changes');
+            log.debug(`[${BranchCompareProvider.name}] Provider disabled or Git API unavailable, clearing changes`);
             this.lastChangedKeys.clear();
             return;
         }
 
         const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
-        log.debug(`[BranchCompareProvider] Processing ${workspaceFolders.length} workspace folders`);
+        log.debug(`[${BranchCompareProvider.name}] Processing ${workspaceFolders.length} workspace folders`);
 
         // Collect unique repositories that are used by the workspace
         const reposByRoot = new Map<string, Repository>();
@@ -585,7 +585,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             }
         }
         const uniqueRepos = [...reposByRoot.values()];
-        log.debug(`[BranchCompareProvider] Processing ${uniqueRepos.length} unique repositories`);
+        log.debug(`[${BranchCompareProvider.name}] Processing ${uniqueRepos.length} unique repositories`);
 
         // Process folders in parallel for better performance
         await Promise.all(
@@ -605,7 +605,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             this.lastChangedKeys.add(filePath);
         }
 
-        log.info(`[BranchCompareProvider] Found changes in ${this.changedFiles.size} files`);
+        log.info(`[${BranchCompareProvider.name}] Found changes in ${this.changedFiles.size} files`);
     }
 
     /**
@@ -622,7 +622,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         // Prefer a repository that directly contains this folder
         const directRepository = this.gitApi.getRepository(workspaceFolder.uri);
         if (directRepository) {
-            log.debug(`[BranchCompareProvider] Found direct repository for folder: ${workspaceFolder.uri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] Found direct repository for folder: ${workspaceFolder.uri.fsPath}`);
             return directRepository;
         }
 
@@ -633,9 +633,9 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         );
 
         if (ancestorRepository) {
-            log.debug(`[BranchCompareProvider] Found ancestor repository for folder: ${workspaceFolder.uri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] Found ancestor repository for folder: ${workspaceFolder.uri.fsPath}`);
         } else {
-            log.debug(`[BranchCompareProvider] No repository found for folder: ${workspaceFolder.uri.fsPath}`);
+            log.debug(`[${BranchCompareProvider.name}] No repository found for folder: ${workspaceFolder.uri.fsPath}`);
         }
 
         return ancestorRepository;
@@ -664,7 +664,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             repository, currentBranchName, baseReference, upstreamReference
         );
 
-        log.debug(`[BranchCompareProvider] Computing diff: ${finalComparisonReference}..HEAD`);
+        log.debug(`[${BranchCompareProvider.name}] Computing diff: ${finalComparisonReference}..HEAD`);
         const fileChanges = await repository.diffBetween(finalComparisonReference, 'HEAD');
         for (const change of fileChanges) {
             this.processFileChange(change);
@@ -688,7 +688,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         }
 
         const upstreamRef = upstreamInfo.remote ? `${upstreamInfo.remote}/${upstreamInfo.name}` : upstreamInfo.name;
-        log.debug(`[BranchCompareProvider] Found upstream reference: ${upstreamRef}`);
+        log.debug(`[${BranchCompareProvider.name}] Found upstream reference: ${upstreamRef}`);
         return upstreamRef;
     }
 
@@ -703,14 +703,14 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     private async resolveSpecialBaseReference(baseReference: string | null, upstreamReference: string | undefined, repository: Repository): Promise<string | null> {
         if (baseReference === '__branch_origin__') {
             const resolved = upstreamReference ?? baseReference;
-            log.debug(`[BranchCompareProvider] Resolved __branch_origin__ to: ${resolved}`);
+            log.debug(`[${BranchCompareProvider.name}] Resolved __branch_origin__ to: ${resolved}`);
             return resolved;
         }
 
         if (baseReference === '__main_origin__') {
             const mainBranch = await this.findMainDevelopmentBranch(repository);
             const resolved = mainBranch ?? 'origin/main';
-            log.debug(`[BranchCompareProvider] Resolved __main_origin__ to: ${resolved}`);
+            log.debug(`[${BranchCompareProvider.name}] Resolved __main_origin__ to: ${resolved}`);
             return resolved;
         }
 
@@ -767,7 +767,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             baseReference === currentBranchName ||
             baseReference === upstreamName;
 
-        log.debug(`[BranchCompareProvider] Comparing against same branch: ${isSameBranch}`);
+        log.debug(`[${BranchCompareProvider.name}] Comparing against same branch: ${isSameBranch}`);
         return isSameBranch;
     }
 
@@ -794,13 +794,13 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         const lastFetchTime = this.lastFetchTimestampByRepoRef.get(fetchKey) ?? 0;
 
         if (lastFetchTime < currentTime - this.fetchCooldownMilliseconds) {
-            log.info(`[BranchCompareProvider] Auto-fetching ${remoteName}/${referencePath}`);
+            log.info(`[${BranchCompareProvider.name}] Auto-fetching ${remoteName}/${referencePath}`);
             try {
                 await repository.fetch(remoteName, referencePath);
                 this.lastFetchTimestampByRepoRef.set(fetchKey, currentTime);
-                log.info(`[BranchCompareProvider] Successfully fetched ${remoteName}/${referencePath}`);
+                log.info(`[${BranchCompareProvider.name}] Successfully fetched ${remoteName}/${referencePath}`);
             } catch (error) {
-                log.error(`[BranchCompareProvider] Failed to fetch ${remoteName}/${referencePath}:`, error);
+                log.error(`[${BranchCompareProvider.name}] Failed to fetch ${remoteName}/${referencePath}:`, error);
             }
         }
     }
@@ -826,10 +826,10 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
                 existingBranches.has(branchName) || !branchName.startsWith('origin/')
             );
 
-            log.debug(`[BranchCompareProvider] Main branch candidates: ${availableCandidates.join(', ')}`);
+            log.debug(`[${BranchCompareProvider.name}] Main branch candidates: ${availableCandidates.join(', ')}`);
             return availableCandidates;
         } catch (error) {
-            log.warn('[BranchCompareProvider] Failed to get branch list, using default candidates:', error);
+            log.warn(`[${BranchCompareProvider.name}] Failed to get branch list, using default candidates:`, error);
             return commonMainBranches;
         }
     }
@@ -859,10 +859,10 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             const timestamp = Number(stdout.trim());
             const isValidTimestamp = !isNaN(timestamp);
 
-            log.trace(`[BranchCompareProvider] Commit ${commitSha} timestamp: ${isValidTimestamp ? timestamp : 'invalid'}`);
+            log.trace(`[${BranchCompareProvider.name}] Commit ${commitSha} timestamp: ${isValidTimestamp ? timestamp : 'invalid'}`);
             return isValidTimestamp ? timestamp : -1;
         } catch (error) {
-            log.warn(`[BranchCompareProvider] Failed to get commit timestamp for ${commitSha}:`, error);
+            log.warn(`[${BranchCompareProvider.name}] Failed to get commit timestamp for ${commitSha}:`, error);
             return -1;
         }
     }
@@ -879,7 +879,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         let bestCommitSha: string | null = null;
         let bestTimestamp = -1;
 
-        log.debug(`[BranchCompareProvider] Evaluating ${baseCandidates.length} fork point candidates`);
+        log.debug(`[${BranchCompareProvider.name}] Evaluating ${baseCandidates.length} fork point candidates`);
 
         for (const baseCandidate of baseCandidates) {
             const forkPointSha = await this.calculateForkPointOrMergeBase(repository, baseCandidate, branchName);
@@ -891,11 +891,11 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             if (commitTimestamp > bestTimestamp) {
                 bestTimestamp = commitTimestamp;
                 bestCommitSha = forkPointSha;
-                log.debug(`[BranchCompareProvider] New best fork point: ${baseCandidate} -> ${forkPointSha}`);
+                log.debug(`[${BranchCompareProvider.name}] New best fork point: ${baseCandidate} -> ${forkPointSha}`);
             }
         }
 
-        log.debug(`[BranchCompareProvider] Selected best fork point: ${bestCommitSha}`);
+        log.debug(`[${BranchCompareProvider.name}] Selected best fork point: ${bestCommitSha}`);
         return bestCommitSha;
     }
 
@@ -921,11 +921,11 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
 
             const forkPointSha = stdout.trim();
             if (forkPointSha) {
-                log.debug(`[BranchCompareProvider] Found fork point: ${baseReference}...${branchName} -> ${forkPointSha}`);
+                log.debug(`[${BranchCompareProvider.name}] Found fork point: ${baseReference}...${branchName} -> ${forkPointSha}`);
                 return forkPointSha;
             }
         } catch (error) {
-            log.debug(`[BranchCompareProvider] Fork point calculation failed, trying merge-base:`, error);
+            log.debug(`[${BranchCompareProvider.name}] Fork point calculation failed, trying merge-base:`, error);
         }
 
         // Fallback: use regular merge-base
@@ -934,10 +934,10 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
             if (!mergeBaseSha) {
                 throw new Error('Merge base is null');
             }
-            log.debug(`[BranchCompareProvider] Found merge base: ${baseReference}...${branchName} -> ${mergeBaseSha}`);
+            log.debug(`[${BranchCompareProvider.name}] Found merge base: ${baseReference}...${branchName} -> ${mergeBaseSha}`);
             return mergeBaseSha;
         } catch (error) {
-            log.error(`[BranchCompareProvider] Failed to find merge base between ${baseReference} and ${branchName}:`);
+            log.error(`[${BranchCompareProvider.name}] Failed to find merge base between ${baseReference} and ${branchName}:`);
             return undefined;
         }
     }
@@ -955,11 +955,11 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
         try {
             const commonMainBranchNames = ['dev', 'develop', 'main', 'master'];
 
-            log.debug('[BranchCompareProvider] Searching for main development branch');
+            log.debug(`[${BranchCompareProvider.name}] Searching for main development branch`);
 
             // Get all remote branches
             const remoteBranches = await repository.getBranches({ remote: true }) as Ref[];
-            log.debug(`[BranchCompareProvider] Found ${remoteBranches.length} remote branches`);
+            log.debug(`[${BranchCompareProvider.name}] Found ${remoteBranches.length} remote branches`);
 
             // Look for origin versions of main branches in priority order
             for (const branchName of commonMainBranchNames) {
@@ -969,15 +969,15 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
                 );
 
                 if (foundBranch) {
-                    log.info(`[BranchCompareProvider] Found main development branch: ${foundBranch.name}`);
+                    log.info(`[${BranchCompareProvider.name}] Found main development branch: ${foundBranch.name}`);
                     return foundBranch.name!;
                 }
             }
 
-            log.debug('[BranchCompareProvider] No main development branch found');
+            log.debug(`[${BranchCompareProvider.name}] No main development branch found`);
             return null;
         } catch (error) {
-            log.error('[BranchCompareProvider] Error finding main development branch:', error);
+            log.error(`[${BranchCompareProvider.name}] Error finding main development branch:`, error);
             return null;
         }
     }
@@ -993,7 +993,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
      */
     private processFileChange(change: Change) {
         const category = this.categoryFromStatus(change.status, change.renameUri);
-        log.trace(`[BranchCompareProvider] Processing change: ${path.basename(change.uri.fsPath)} (${category})`);
+        log.trace(`[${BranchCompareProvider.name}] Processing change: ${path.basename(change.uri.fsPath)} (${category})`);
         this.changedFiles.set(normFs(change.uri.fsPath), category);
         if (change.renameUri && change.originalUri !== change.renameUri) {
             this.changedFiles.set(normFs(change.renameUri.fsPath), 'renamed');
