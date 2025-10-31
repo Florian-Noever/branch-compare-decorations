@@ -1,22 +1,19 @@
 {
   "name": "branch-compare",
   "displayName": "Branch Compare",
-  "publisher": "der-floh",
   "description": "Select to which branch git compares to display its colordecorations.",
-  "version": "0.0.2",
+  "version": "0.0.1",
+  "publisher": "der-floh",
+  "license": "MIT",
   "icon": "assets/icon-x512.png",
-  "preview": true,
   "repository": {
+    "type": "git",
     "url": "https://github.com/FlorianNoeverGOB/branch-compare"
   },
   "bugs": {
     "url": "https://github.com/FlorianNoeverGOB/branch-compare/issues"
   },
-  "homepage": "https://github.com/FlorianNoeverGOB/branch-compare#readme",
-  "license": "MIT",
-  "engines": {
-    "vscode": "^1.103.0"
-  },
+  "homepage": "https://github.com/FlorianNoeverGOB/branch-compare",
   "keywords": [
     "git",
     "compare",
@@ -25,21 +22,23 @@
     "decorations",
     "diff"
   ],
+  "engines": {
+    "vscode": "^1.103.0"
+  },
   "categories": [
-    "SCM Providers"
+    "SCM Providers",
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
   ],
   "activationEvents": [
     "workspaceContains:.git",
     "onStartupFinished"
   ],
-  "extensionDependencies": [
-    "vscode.git"
-  ],
-  "compilerOptions": {
-    "importsNotUsedAsValues": "remove",
-    "preserveConstEnums": false,
-    "verbatimModuleSyntax": false
-  },
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
