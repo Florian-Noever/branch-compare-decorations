@@ -8,12 +8,12 @@
   "icon": "assets/icon-x512.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/FlorianNoeverGOB/branch-compare"
+    "url": "https://github.com/Florian-Noever/branch-compare"
   },
   "bugs": {
-    "url": "https://github.com/FlorianNoeverGOB/branch-compare/issues"
+    "url": "https://github.com/Florian-Noever/branch-compare/issues"
   },
-  "homepage": "https://github.com/FlorianNoeverGOB/branch-compare",
+  "homepage": "https://github.com/Florian-Noever/branch-compare",
   "keywords": [
     "git",
     "compare",
