@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { Sema } from 'async-sema';
 import type { API as GitAPI, Repository } from '../types/git';
 import type { ChangeCategory } from '../types/changeCategory';
@@ -10,7 +9,7 @@ import { CATEGORY_PRESETS, categoryFromStatus } from './changeCategory';
 import { errorMessage } from './errors';
 import { parseRemoteRef } from './gitUtils';
 import { Logger } from './logger';
-import { normalizeFsPath } from './pathUtils';
+import { getAncestorDirs, isPathInside, normalizeFsPath } from './pathUtils';
 
 /**
  * Decorates the files that changed between a configurable base ref and HEAD, using the badges and
@@ -22,6 +21,8 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
 
     /** Normalized path of every changed file */
     private changedFiles = new Map<string, ChangeCategory>();
+    /** Normalized path of every folder containing changed files */
+    private changedDirs = new Set<string>();
     private readonly disposables: vscode.Disposable[] = [this._onDidChangeFileDecorations];
     private readonly repositorySubscriptions = new Map<Repository, vscode.Disposable[]>();
     private readonly baselineCache = new Map<string, string>();
@@ -78,16 +79,12 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             return undefined;
         }
 
-        const filePath = normalizeFsPath(uri.fsPath);
-        let category = this.changedFiles.get(filePath);
+        const fsPath = normalizeFsPath(uri.fsPath);
+        // VS Code only propagates colors to folders whose children it has rendered, so folders
+        // containing changes are decorated explicitly
+        const category = this.changedFiles.get(fsPath) ?? (this.changedDirs.has(fsPath) ? 'modified' : undefined);
         if (!category) {
-            // VS Code only propagates colors to folders whose children it has rendered, so folders
-            // containing changes are decorated explicitly
-            const containsChanges = [...this.changedFiles.keys()].some(changedFile => changedFile.startsWith(filePath));
-            if (!containsChanges) {
-                return undefined;
-            }
-            category = 'modified';
+            return undefined;
         }
 
         const { badge, colorKey } = CATEGORY_PRESETS[category];
@@ -109,8 +106,10 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         this.isRefreshing = true;
         try {
             const previousFiles = new Set(this.changedFiles.keys());
+            const rootPaths = this.getRootPaths();
             this.changedFiles = await this.computeChanges();
-            this.fireDecorationChanges(previousFiles);
+            this.changedDirs = new Set([...this.changedFiles.keys()].flatMap(filePath => getAncestorDirs(filePath, rootPaths)));
+            this.fireDecorationChanges(previousFiles, rootPaths);
         } finally {
             this.isRefreshing = false;
             if (this.isRefreshQueued) {
@@ -147,7 +146,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         this.repositorySubscriptions.delete(repository);
     }
 
-    private fireDecorationChanges(previousFiles: Set<string>): void {
+    private fireDecorationChanges(previousFiles: Set<string>, rootPaths: string[]): void {
         const impactedFiles = new Set<string>();
         for (const filePath of this.changedFiles.keys()) {
             if (!previousFiles.has(filePath)) {
@@ -160,39 +159,23 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             }
         }
 
-        const uris: vscode.Uri[] = [];
+        const impactedPaths = new Set(impactedFiles);
         for (const filePath of impactedFiles) {
-            uris.push(vscode.Uri.file(filePath));
-            for (const dirPath of this.getParentDirsWithinWorkspace(filePath)) {
-                uris.push(vscode.Uri.file(dirPath));
+            for (const dirPath of getAncestorDirs(filePath, rootPaths)) {
+                impactedPaths.add(dirPath);
             }
         }
 
-        if (uris.length === 0 || uris.length > MAX_DECORATION_EVENT_URIS) {
+        if (impactedPaths.size === 0 || impactedPaths.size > MAX_DECORATION_EVENT_URIS) {
             this._onDidChangeFileDecorations.fire(undefined);
         } else {
-            this._onDidChangeFileDecorations.fire(uris);
+            this._onDidChangeFileDecorations.fire([...impactedPaths].map(fsPath => vscode.Uri.file(fsPath)));
         }
     }
 
-    private getParentDirsWithinWorkspace(filePath: string): string[] {
-        const dirPaths: string[] = [];
-        for (const folder of vscode.workspace.workspaceFolders ?? []) {
-            const rootPath = normalizeFsPath(folder.uri.fsPath);
-            if (!filePath.startsWith(rootPath)) {
-                continue;
-            }
-            let dirPath = path.dirname(filePath);
-            while (dirPath.length > rootPath.length) {
-                dirPaths.push(dirPath);
-                const parentPath = path.dirname(dirPath);
-                if (parentPath === dirPath) {
-                    break;
-                }
-                dirPath = parentPath;
-            }
-        }
-        return dirPaths;
+    /** Folders whose descendants can be decorated */
+    private getRootPaths(): string[] {
+        return (vscode.workspace.workspaceFolders ?? []).map(folder => normalizeFsPath(folder.uri.fsPath));
     }
 
     private async computeChanges(): Promise<Map<string, ChangeCategory>> {
@@ -231,7 +214,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             return repository;
         }
         const folderPath = normalizeFsPath(folder.uri.fsPath);
-        return this.gitApi.repositories.find(candidate => folderPath.startsWith(normalizeFsPath(candidate.rootUri.fsPath)));
+        return this.gitApi.repositories.find(candidate => isPathInside(normalizeFsPath(candidate.rootUri.fsPath), folderPath));
     }
 
     private async collectChanges(repository: Repository, changedFiles: Map<string, ChangeCategory>): Promise<void> {
