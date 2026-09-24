@@ -23,6 +23,18 @@ export function getActiveRepository(gitApi: GitAPI): Repository | undefined {
     return (activeUri && gitApi.getRepository(activeUri)) ?? undefined;
 }
 
+/**
+ * Splits `remote/branch` when the prefix is one of `remoteNames`. Local branches such as
+ * `feature/login` yield undefined.
+ */
+export function parseRemoteRef(ref: string, remoteNames: readonly string[]): { remote: string; branch: string } | undefined {
+    // Longest name first: remote names may contain slashes themselves
+    const remote = [...remoteNames]
+        .sort((a, b) => b.length - a.length)
+        .find(name => ref.startsWith(`${name}/`) && ref.length > name.length + 1);
+    return remote ? { remote, branch: ref.slice(remote.length + 1) } : undefined;
+}
+
 async function runGit(gitApi: GitAPI, repository: Repository, args: string[]): Promise<string> {
     const { stdout } = await execFileAsync(gitApi.git.path, args, { cwd: repository.rootUri.fsPath });
     return stdout.trim();

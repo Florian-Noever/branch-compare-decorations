@@ -8,6 +8,7 @@ import { getCurrentBaseRef } from './baseRefUtils';
 import { computeBaseline, getUpstreamRef, resolveSpecialBaseRef } from './baselineResolver';
 import { CATEGORY_PRESETS, categoryFromStatus } from './changeCategory';
 import { errorMessage } from './errors';
+import { parseRemoteRef } from './gitUtils';
 import { Logger } from './logger';
 import { normalizeFsPath } from './pathUtils';
 
@@ -272,29 +273,27 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
     }
 
     private async autoFetch(repository: Repository, baseRef: string): Promise<void> {
-        const autoFetchEnabled = vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_FETCH, true);
-        if (!autoFetchEnabled || !baseRef.includes('/')) {
+        if (!vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_FETCH, true)) {
             return;
         }
-
-        const [remote, ...refParts] = baseRef.split('/');
-        const ref = refParts.join('/');
-        if (!remote || !ref) {
-            return;
+        const remoteRef = parseRemoteRef(baseRef, repository.state.remotes.map(remote => remote.name));
+        if (!remoteRef) {
+            return; // A local branch, tag or commit: nothing to fetch
         }
 
-        const fetchKey = `${normalizeFsPath(repository.rootUri.fsPath)}#${remote}/${ref}`;
+        const fetchKey = `${normalizeFsPath(repository.rootUri.fsPath)}#${baseRef}`;
         const now = Date.now();
         if (now - (this.lastFetchByRef.get(fetchKey) ?? 0) < FETCH_COOLDOWN_MS) {
             return;
         }
+        // Recorded before fetching so that failures (e.g. while offline) are throttled too
+        this.lastFetchByRef.set(fetchKey, now);
 
         try {
-            await repository.fetch(remote, ref);
-            this.lastFetchByRef.set(fetchKey, now);
-            Logger.info(`Fetched ${remote}/${ref}`);
+            await repository.fetch(remoteRef.remote, remoteRef.branch);
+            Logger.info(`Fetched ${baseRef}`);
         } catch (e) {
-            Logger.error(`Failed to fetch ${remote}/${ref}: ${errorMessage(e)}`);
+            Logger.warn(`Failed to fetch ${baseRef}: ${errorMessage(e)}`);
         }
     }
 }
