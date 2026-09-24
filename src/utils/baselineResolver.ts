@@ -21,6 +21,18 @@ export async function resolveSpecialBaseRef(repository: Repository, baseRef: str
     return baseRef;
 }
 
+/** Decoration tooltip for a configured base ref and the ref it resolved to */
+export function describeBaseRef(configuredRef: string, resolvedRef: string): string {
+    switch (configuredRef) {
+        case BRANCH_ORIGIN_REF:
+            return 'Changes since this branch was created';
+        case MAIN_ORIGIN_REF:
+            return `Changes since branching from ${resolvedRef}`;
+        default:
+            return `Changes vs ${configuredRef}`;
+    }
+}
+
 /**
  * The commit to diff HEAD against. Comparing a branch with itself or its own upstream would show
  * nothing, so then the most recent fork point from any main development branch is used instead.
