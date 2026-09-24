@@ -19,7 +19,6 @@ export const MAIN_BRANCH_NAMES = ['dev', 'develop', 'main', 'master'];
 export const DEFAULT_MAIN_REF = 'origin/main';
 
 export const REFRESH_DEBOUNCE_MS = 150;
-export const QUEUED_REFRESH_DELAY_MS = 50;
 export const FETCH_COOLDOWN_MS = 30_000;
 export const MAX_CONCURRENT_REPOSITORIES = 3;
 /** Above this many URIs a single "everything changed" event is cheaper than listing them */

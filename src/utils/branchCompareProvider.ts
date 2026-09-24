@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Sema } from 'async-sema';
 import type { API as GitAPI, Repository } from '../types/git';
 import type { ChangeCategory } from '../types/changeCategory';
-import { CONFIG_AUTO_FETCH, CONFIG_BASE_REFS, CONFIG_SECTION, FETCH_COOLDOWN_MS, MAX_CONCURRENT_REPOSITORIES, MAX_DECORATION_EVENT_URIS, QUEUED_REFRESH_DELAY_MS, REFRESH_DEBOUNCE_MS } from '../constants';
+import { CONFIG_AUTO_FETCH, CONFIG_BASE_REFS, CONFIG_SECTION, FETCH_COOLDOWN_MS, MAX_CONCURRENT_REPOSITORIES, MAX_DECORATION_EVENT_URIS, REFRESH_DEBOUNCE_MS } from '../constants';
 import { getBaseRefForBranch } from './baseRefUtils';
 import { computeBaseline, describeBaseRef, getUpstreamRef, resolveSpecialBaseRef } from './baselineResolver';
 import { CATEGORY_PRESETS, categoryFromStatus } from './changeCategory';
@@ -35,9 +35,11 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
     private readonly baselineCache = new Map<string, string>();
     private readonly lastFetchByRef = new Map<string, number>();
     private readonly repositorySema = new Sema(MAX_CONCURRENT_REPOSITORIES);
+    /** Failures already logged as a warning, so each problem is reported once instead of on every refresh */
+    private readonly reportedFailures = new Set<string>();
     private refreshTimer?: NodeJS.Timeout;
-    private isRefreshing = false;
-    private isRefreshQueued = false;
+    private currentRefresh?: Promise<void>;
+    private queuedRefresh?: Promise<void>;
 
     constructor(private readonly gitApi: GitAPI) {
         this.disposables.push(
@@ -98,32 +100,40 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         };
     }
 
-    /** Recomputes the changes of all repositories and fires decoration events for what changed */
-    async refresh(): Promise<void> {
-        if (this.isRefreshing) {
-            this.isRefreshQueued = true;
-            return;
+    /**
+     * Recomputes the changes of all repositories and fires decoration events for what changed.
+     * Calls made while a refresh runs share one follow-up refresh; the returned promise settles once
+     * a refresh that started after the call has finished. Never rejects.
+     */
+    refresh(): Promise<void> {
+        if (!this.currentRefresh) {
+            this.currentRefresh = this.runRefresh().finally(() => {
+                this.currentRefresh = undefined;
+            });
+            return this.currentRefresh;
         }
+        this.queuedRefresh ??= this.currentRefresh.then(() => {
+            this.queuedRefresh = undefined;
+            return this.refresh();
+        });
+        return this.queuedRefresh;
+    }
 
-        this.isRefreshing = true;
+    private async runRefresh(): Promise<void> {
         try {
             const previousFiles = this.changedFiles;
             const rootPaths = this.getRootPaths();
             this.changedFiles = await this.computeChanges();
             this.changedDirs = this.collectChangedDirs(rootPaths);
             this.fireDecorationChanges(previousFiles, rootPaths);
-        } finally {
-            this.isRefreshing = false;
-            if (this.isRefreshQueued) {
-                this.isRefreshQueued = false;
-                this.scheduleRefresh(QUEUED_REFRESH_DELAY_MS);
-            }
+        } catch (e) {
+            Logger.error(`Failed to refresh decorations: ${errorMessage(e)}`);
         }
     }
 
     private scheduleRefresh(delay = REFRESH_DEBOUNCE_MS): void {
         clearTimeout(this.refreshTimer);
-        this.refreshTimer = setTimeout(() => this.refresh(), delay);
+        this.refreshTimer = setTimeout(() => void this.refresh(), delay);
     }
 
     private subscribeToRepository(repository: Repository): void {
@@ -203,6 +213,9 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             await this.repositorySema.acquire();
             try {
                 await this.collectChanges(repository, changedFiles);
+            } catch (e) {
+                // A broken base ref in one repository must not hide the decorations of the others
+                this.reportFailure(`No decorations for ${repository.rootUri.fsPath}: ${errorMessage(e)}`);
             } finally {
                 this.repositorySema.release();
             }
@@ -210,6 +223,15 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
 
         Logger.debug(`Found ${changedFiles.size} changed files`);
         return changedFiles;
+    }
+
+    private reportFailure(message: string): void {
+        if (this.reportedFailures.has(message)) {
+            Logger.debug(message);
+            return;
+        }
+        this.reportedFailures.add(message);
+        Logger.warn(message);
     }
 
     private async collectChanges(repository: Repository, changedFiles: Map<string, PathChange>): Promise<void> {

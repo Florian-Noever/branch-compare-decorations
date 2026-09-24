@@ -13,7 +13,9 @@ export function getUpstreamRef(repository: Repository): string | undefined {
 /** Replaces the special base ref sentinels with a real ref */
 export async function resolveSpecialBaseRef(repository: Repository, baseRef: string, upstreamRef: string | undefined): Promise<string> {
     if (baseRef === BRANCH_ORIGIN_REF) {
-        return upstreamRef ?? baseRef;
+        // The branch itself (or its upstream) makes computeBaseline use the latest fork point from a
+        // main development branch, which also works for branches that were never pushed
+        return upstreamRef ?? repository.state.HEAD?.name ?? baseRef;
     }
     if (baseRef === MAIN_ORIGIN_REF) {
         return await findMainBranch(repository) ?? DEFAULT_MAIN_REF;
