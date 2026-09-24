@@ -173,11 +173,15 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             }
         }
 
-        if (impactedPaths.size === 0 || impactedPaths.size > MAX_DECORATION_EVENT_URIS) {
-            this._onDidChangeFileDecorations.fire(undefined);
-        } else {
-            this._onDidChangeFileDecorations.fire([...impactedPaths].map(fsPath => vscode.Uri.file(fsPath)));
+        if (impactedPaths.size === 0) {
+            return;
         }
+        if (impactedPaths.size > MAX_DECORATION_EVENT_URIS) {
+            Logger.debug(`${impactedPaths.size} decorations changed, refreshing all`);
+            this._onDidChangeFileDecorations.fire(undefined);
+            return;
+        }
+        this._onDidChangeFileDecorations.fire([...impactedPaths].map(fsPath => vscode.Uri.file(fsPath)));
     }
 
     /** Folders whose descendants can be decorated: workspace folders and repository roots */

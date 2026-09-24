@@ -46,13 +46,9 @@ export async function getForkPointOrMergeBase(gitApi: GitAPI, repository: Reposi
     }
 
     try {
-        const mergeBase = await repository.getMergeBase(baseRef, branchName);
-        if (!mergeBase) {
-            throw new Error('Merge base is null');
-        }
-        return mergeBase;
-    } catch {
-        Logger.error(`Failed to find merge base between ${baseRef} and ${branchName}`);
+        return await repository.getMergeBase(baseRef, branchName);
+    } catch (e) {
+        Logger.debug(`No merge base of ${branchName} and ${baseRef}: ${errorMessage(e)}`);
         return undefined;
     }
 }
