@@ -1,14 +1,20 @@
 import * as vscode from 'vscode';
-import type { API as GitAPI, Repository } from '../types/git';
+import { RefType } from '../types/git';
+import type { API as GitAPI, Ref, Repository } from '../types/git';
 import { BRANCH_ORIGIN_REF, MAIN_ORIGIN_REF } from '../constants';
 import { errorMessage } from './errors';
+import { getPreferredRemote } from './gitUtils';
 import { Logger } from './logger';
 import { isPathInside, normalizeFsPath } from './pathUtils';
 
 type BaseRefPickItem = vscode.QuickPickItem & { value: string };
 
 const MANUAL_ENTRY = '__manual__';
-const REMOTE_PREFIX = 'origin/';
+
+/** Remote branches, without the `<remote>/HEAD` symbolic refs */
+function isRemoteBranch(branch: Ref): branch is Ref & { name: string } {
+    return branch.type === RefType.RemoteHead && !!branch.name && !branch.name.endsWith('/HEAD');
+}
 
 /** Quick picks for choosing the base ref the current branch is compared against */
 export class GitBranchPicker {
@@ -24,7 +30,7 @@ export class GitBranchPicker {
             { label: '', kind: vscode.QuickPickItemKind.Separator, value: '' },
             {
                 label: '$(pencil) Enter manually…',
-                description: 'Custom remote branch (e.g., origin/feature-branch)',
+                description: 'Any branch, tag or commit',
                 value: MANUAL_ENTRY,
             },
             {
@@ -42,7 +48,7 @@ export class GitBranchPicker {
             return undefined;
         }
         if (selected.value === MANUAL_ENTRY) {
-            return this.promptManualReference(currentSelection);
+            return this.promptManualReference(repository, currentSelection);
         }
         return selected.value;
     }
@@ -98,25 +104,29 @@ export class GitBranchPicker {
         return items;
     }
 
+    /** Branches of all remotes, those of the preferred remote first */
     private async createRemoteBranchItems(repository: Repository): Promise<BaseRefPickItem[]> {
+        const preferredRemote = getPreferredRemote(repository);
         try {
             const branches = await repository.getBranches({ remote: true });
             return branches
-                .map(branch => branch.name)
-                .filter((name): name is string => !!name?.startsWith(REMOTE_PREFIX))
-                .sort((a, b) => a.localeCompare(b))
-                .map(name => ({ label: `$(git-branch) ${name}`, description: 'remote', value: name }));
+                .filter(isRemoteBranch)
+                .sort((a, b) => Number(b.remote === preferredRemote) - Number(a.remote === preferredRemote) || a.name.localeCompare(b.name))
+                .map(branch => ({ label: `$(git-branch) ${branch.name}`, description: branch.remote, value: branch.name }));
         } catch (e) {
             Logger.warn(`Failed to list remote branches: ${errorMessage(e)}`);
             return [];
         }
     }
 
-    private async promptManualReference(currentSelection: string): Promise<string | undefined> {
-        const value = currentSelection.startsWith(REMOTE_PREFIX) ? currentSelection : REMOTE_PREFIX;
+    private async promptManualReference(repository: Repository, currentSelection: string): Promise<string | undefined> {
+        const remote = getPreferredRemote(repository);
+        const remotePrefix = remote ? `${remote}/` : '';
+        const isSpecialRef = currentSelection === BRANCH_ORIGIN_REF || currentSelection === MAIN_ORIGIN_REF;
+        const value = currentSelection && !isSpecialRef ? currentSelection : remotePrefix;
 
         return vscode.window.showInputBox({
-            prompt: 'Enter remote branch (e.g., origin/feature-branch). Empty disables.',
+            prompt: `Enter a branch, tag or commit to compare against (e.g. ${remotePrefix}main). Empty disables.`,
             value,
             // Select the current ref for replacement, otherwise place the cursor after the remote prefix
             valueSelection: value === currentSelection ? [0, value.length] : [value.length, value.length],

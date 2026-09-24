@@ -68,25 +68,23 @@ export async function getCommitTimestamp(gitApi: GitAPI, repository: Repository,
     }
 }
 
-/** The first `origin/<name>` of MAIN_BRANCH_NAMES that exists */
-export async function findMainBranch(repository: Repository): Promise<string | undefined> {
-    try {
-        const branchNames = new Set((await repository.getBranches({ remote: true })).map(branch => branch.name));
-        return MAIN_BRANCH_NAMES.map(name => `origin/${name}`).find(name => branchNames.has(name));
-    } catch (e) {
-        Logger.error(`Failed to find the main development branch: ${errorMessage(e)}`);
-        return undefined;
+/** The remote of HEAD's upstream, otherwise `origin`, otherwise the first remote */
+export function getPreferredRemote(repository: Repository): string | undefined {
+    const remoteNames = repository.state.remotes.map(remote => remote.name);
+    const upstreamRemote = repository.state.HEAD?.upstream?.remote;
+    if (upstreamRemote && remoteNames.includes(upstreamRemote)) {
+        return upstreamRemote;
     }
+    return remoteNames.includes('origin') ? 'origin' : remoteNames[0];
 }
 
-/** Remote main development branches that exist, plus the local names as a fallback */
-export async function getMainBranchCandidates(repository: Repository): Promise<string[]> {
-    const remoteCandidates = MAIN_BRANCH_NAMES.map(name => `origin/${name}`);
-    try {
-        const branchNames = new Set((await repository.getBranches({ remote: true })).map(branch => branch.name));
-        return [...remoteCandidates.filter(name => branchNames.has(name)), ...MAIN_BRANCH_NAMES];
-    } catch (e) {
-        Logger.warn(`Failed to list branches, using the default candidates: ${errorMessage(e)}`);
-        return [...remoteCandidates, ...MAIN_BRANCH_NAMES];
-    }
+/**
+ * The existing main development branches in MAIN_BRANCH_NAMES priority, those of the preferred
+ * remote before local ones.
+ */
+export async function getMainBranches(repository: Repository): Promise<string[]> {
+    const branchNames = new Set((await repository.getBranches({ remote: true })).map(branch => branch.name));
+    const remote = getPreferredRemote(repository);
+    const remoteNames = remote ? MAIN_BRANCH_NAMES.map(name => `${remote}/${name}`) : [];
+    return [...remoteNames, ...MAIN_BRANCH_NAMES].filter(name => branchNames.has(name));
 }

@@ -1,6 +1,6 @@
 import type { API as GitAPI, Repository } from '../types/git';
-import { BRANCH_ORIGIN_REF, DEFAULT_MAIN_REF, MAIN_ORIGIN_REF } from '../constants';
-import { findMainBranch, getCommitTimestamp, getForkPointOrMergeBase, getMainBranchCandidates } from './gitUtils';
+import { BRANCH_ORIGIN_REF, MAIN_BRANCH_NAMES, MAIN_ORIGIN_REF } from '../constants';
+import { getCommitTimestamp, getForkPointOrMergeBase, getMainBranches } from './gitUtils';
 
 export function getUpstreamRef(repository: Repository): string | undefined {
     const upstream = repository.state.HEAD?.upstream;
@@ -18,7 +18,11 @@ export async function resolveSpecialBaseRef(repository: Repository, baseRef: str
         return upstreamRef ?? repository.state.HEAD?.name ?? baseRef;
     }
     if (baseRef === MAIN_ORIGIN_REF) {
-        return await findMainBranch(repository) ?? DEFAULT_MAIN_REF;
+        const [mainBranch] = await getMainBranches(repository);
+        if (!mainBranch) {
+            throw new Error(`No main development branch (${MAIN_BRANCH_NAMES.join(', ')}) found`);
+        }
+        return mainBranch;
     }
     return baseRef;
 }
@@ -37,12 +41,12 @@ export function describeBaseRef(configuredRef: string, resolvedRef: string): str
 
 /**
  * The commit to diff HEAD against. Comparing a branch with itself or its own upstream would show
- * nothing, so then the most recent fork point from any main development branch is used instead.
+ * nothing, so then the most recent fork point from any other main development branch is used instead.
  */
 export async function computeBaseline(gitApi: GitAPI, repository: Repository, branchName: string, baseRef: string, upstreamRef: string | undefined): Promise<string> {
     let baseline: string | undefined;
     if (isSameBranch(repository, branchName, baseRef, upstreamRef)) {
-        const candidates = await getMainBranchCandidates(repository);
+        const candidates = (await getMainBranches(repository)).filter(name => name !== branchName && name !== upstreamRef);
         baseline = await selectLatestForkPoint(gitApi, repository, branchName, candidates);
     } else {
         baseline = await getForkPointOrMergeBase(gitApi, repository, baseRef, branchName);
