@@ -31,8 +31,9 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
     /** Keyed by the normalized path of every folder containing changed files */
     private changedDirs = new Map<string, PathChange>();
     private readonly disposables: vscode.Disposable[] = [this._onDidChangeFileDecorations];
-    private readonly repositorySubscriptions = new Map<Repository, vscode.Disposable[]>();
-    private readonly baselineCache = new Map<string, string>();
+    private readonly repositorySubscriptions = new Map<Repository, vscode.Disposable>();
+    /** Latest baseline per normalized repository root */
+    private readonly baselineCache = new Map<string, { key: string; baseline: string }>();
     private readonly lastFetchByRef = new Map<string, number>();
     private readonly repositorySema = new Sema(MAX_CONCURRENT_REPOSITORIES);
     /** Failures already logged as a warning, so each problem is reported once instead of on every refresh */
@@ -48,10 +49,6 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
                     this.scheduleRefresh();
                 }
             }),
-            vscode.workspace.onDidSaveTextDocument(() => this.scheduleRefresh()),
-            vscode.workspace.onDidCreateFiles(() => this.scheduleRefresh()),
-            vscode.workspace.onDidDeleteFiles(() => this.scheduleRefresh()),
-            vscode.workspace.onDidRenameFiles(() => this.scheduleRefresh()),
             gitApi.onDidOpenRepository(repository => {
                 Logger.info(`Repository opened: ${repository.rootUri.fsPath}`);
                 this.subscribeToRepository(repository);
@@ -60,6 +57,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
             gitApi.onDidCloseRepository(repository => {
                 Logger.info(`Repository closed: ${repository.rootUri.fsPath}`);
                 this.unsubscribeFromRepository(repository);
+                this.baselineCache.delete(normalizeFsPath(repository.rootUri.fsPath));
                 this.scheduleRefresh();
             })
         );
@@ -80,6 +78,11 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         for (const disposable of this.disposables) {
             disposable.dispose();
         }
+    }
+
+    /** Forgets the cached baselines, e.g. after a base ref was rewritten */
+    resetBaselines(): void {
+        this.baselineCache.clear();
     }
 
     provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
@@ -140,21 +143,12 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         if (this.repositorySubscriptions.has(repository)) {
             return;
         }
-        const onRepositoryChange = () => {
-            this.invalidateBaselines(repository);
-            this.scheduleRefresh();
-        };
-        this.repositorySubscriptions.set(repository, [
-            repository.state.onDidChange(onRepositoryChange),
-            repository.onDidCheckout(onRepositoryChange),
-            repository.onDidCommit(onRepositoryChange),
-        ]);
+        // Fires after every `git status`, so it covers commits, checkouts and fetches from any source
+        this.repositorySubscriptions.set(repository, repository.state.onDidChange(() => this.scheduleRefresh()));
     }
 
     private unsubscribeFromRepository(repository: Repository): void {
-        for (const subscription of this.repositorySubscriptions.get(repository) ?? []) {
-            subscription.dispose();
-        }
+        this.repositorySubscriptions.get(repository)?.dispose();
         this.repositorySubscriptions.delete(repository);
     }
 
@@ -258,23 +252,22 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         }
     }
 
+    /**
+     * The fork-point search costs two git calls per candidate branch, so its result is cached. A base
+     * ref moving forward doesn't change where HEAD forked from it, so HEAD is enough to key the cache;
+     * resetBaselines() covers rewritten base refs.
+     */
     private async getBaseline(repository: Repository, branchName: string, baseRef: string, upstreamRef: string | undefined): Promise<string> {
-        const cacheKey = [normalizeFsPath(repository.rootUri.fsPath), repository.state.HEAD?.commit ?? '', baseRef, upstreamRef ?? ''].join('|');
-        let baseline = this.baselineCache.get(cacheKey);
-        if (!baseline) {
-            baseline = await computeBaseline(this.gitApi, repository, branchName, baseRef, upstreamRef);
-            this.baselineCache.set(cacheKey, baseline);
+        const rootPath = normalizeFsPath(repository.rootUri.fsPath);
+        const key = [repository.state.HEAD?.commit, branchName, baseRef, upstreamRef].join('|');
+        const cached = this.baselineCache.get(rootPath);
+        if (cached?.key === key) {
+            return cached.baseline;
         }
-        return baseline;
-    }
 
-    private invalidateBaselines(repository: Repository): void {
-        const keyPrefix = `${normalizeFsPath(repository.rootUri.fsPath)}|`;
-        for (const cacheKey of [...this.baselineCache.keys()]) {
-            if (cacheKey.startsWith(keyPrefix)) {
-                this.baselineCache.delete(cacheKey);
-            }
-        }
+        const baseline = await computeBaseline(this.gitApi, repository, branchName, baseRef, upstreamRef);
+        this.baselineCache.set(rootPath, { key, baseline });
+        return baseline;
     }
 
     private async autoFetch(repository: Repository, baseRef: string): Promise<void> {
