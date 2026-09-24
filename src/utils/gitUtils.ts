@@ -14,15 +14,6 @@ export function getGitApi(): GitAPI | undefined {
     return gitExtension?.enabled ? gitExtension.getAPI(1) : undefined;
 }
 
-/** The only open repository, or the one containing the active editor */
-export function getActiveRepository(gitApi: GitAPI): Repository | undefined {
-    if (gitApi.repositories.length <= 1) {
-        return gitApi.repositories[0];
-    }
-    const activeUri = vscode.window.activeTextEditor?.document.uri;
-    return (activeUri && gitApi.getRepository(activeUri)) ?? undefined;
-}
-
 /**
  * Splits `remote/branch` when the prefix is one of `remoteNames`. Local branches such as
  * `feature/login` yield undefined.

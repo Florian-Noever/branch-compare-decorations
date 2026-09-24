@@ -15,9 +15,7 @@ export class GitBranchPicker {
     constructor(private readonly gitApi: GitAPI) { }
 
     /** @returns the chosen base ref, an empty string to disable decorations, or undefined if cancelled */
-    async pickBaseReference(currentSelection?: string): Promise<string | undefined> {
-        const repository = await this.selectRepository();
-
+    async pickBaseReference(repository: Repository, currentSelection: string): Promise<string | undefined> {
         const items: BaseRefPickItem[] = [
             ...this.createSpecialItems(repository),
             { label: '', kind: vscode.QuickPickItemKind.Separator, value: '' },
@@ -37,9 +35,7 @@ export class GitBranchPicker {
         ];
 
         const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: repository
-                ? 'Pick a remote branch or special comparison for Explorer decorations'
-                : 'No Git repository detected. Enter a base ref or disable.',
+            placeHolder: 'Pick a remote branch or special comparison for Explorer decorations',
             matchOnDescription: true,
         });
         if (!selected) {
@@ -52,9 +48,10 @@ export class GitBranchPicker {
     }
 
     /**
-     * The only repository, the one matching a single workspace folder, or otherwise the one the user picks.
+     * The only repository, the one matching a single workspace folder, or otherwise the one the user
+     * picks. Undefined if there is none or the user cancelled.
      */
-    private async selectRepository(): Promise<Repository | undefined> {
+    async selectRepository(): Promise<Repository | undefined> {
         const repositories = this.gitApi.repositories;
         if (repositories.length <= 1) {
             return repositories[0];
@@ -83,11 +80,7 @@ export class GitBranchPicker {
         return selected?.repository;
     }
 
-    private createSpecialItems(repository: Repository | undefined): BaseRefPickItem[] {
-        if (!repository) {
-            return [];
-        }
-
+    private createSpecialItems(repository: Repository): BaseRefPickItem[] {
         const items: BaseRefPickItem[] = [];
         const branchName = repository.state.HEAD?.name;
         if (branchName) {
@@ -105,11 +98,7 @@ export class GitBranchPicker {
         return items;
     }
 
-    private async createRemoteBranchItems(repository: Repository | undefined): Promise<BaseRefPickItem[]> {
-        if (!repository) {
-            return [];
-        }
-
+    private async createRemoteBranchItems(repository: Repository): Promise<BaseRefPickItem[]> {
         try {
             const branches = await repository.getBranches({ remote: true });
             return branches
@@ -123,8 +112,8 @@ export class GitBranchPicker {
         }
     }
 
-    private async promptManualReference(currentSelection?: string): Promise<string | undefined> {
-        const value = currentSelection?.startsWith(REMOTE_PREFIX) ? currentSelection : REMOTE_PREFIX;
+    private async promptManualReference(currentSelection: string): Promise<string | undefined> {
+        const value = currentSelection.startsWith(REMOTE_PREFIX) ? currentSelection : REMOTE_PREFIX;
 
         return vscode.window.showInputBox({
             prompt: 'Enter remote branch (e.g., origin/feature-branch). Empty disables.',
