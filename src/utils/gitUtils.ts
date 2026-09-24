@@ -9,7 +9,9 @@ import { Logger } from './logger';
 const execFileAsync = promisify(execFile);
 
 export function getGitApi(): GitAPI | undefined {
-    return vscode.extensions.getExtension<GitExtension>('vscode.git')?.exports?.getAPI(1);
+    const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git')?.exports;
+    // getAPI throws while Git is turned off with the `git.enabled` setting
+    return gitExtension?.enabled ? gitExtension.getAPI(1) : undefined;
 }
 
 /** The only open repository, or the one containing the active editor */

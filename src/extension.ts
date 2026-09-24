@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const gitApi = getGitApi();
     if (!gitApi) {
-        Logger.warn('The built-in Git extension is unavailable, decorations are turned off.');
+        Logger.warn('Git is disabled (git.enabled) or unavailable, decorations are turned off.');
         return;
     }
 
