@@ -12,4 +12,5 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 .github/**
+.claude/**
 assets/meta/**
