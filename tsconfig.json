@@ -2,15 +2,25 @@
 	"compilerOptions": {
 		"module": "Node16",
 		"target": "ES2022",
-		"outDir": "out",
 		"lib": [
 			"ES2022"
 		],
-		"sourceMap": true,
-		"rootDir": "src",
+		"noEmit": true,
 		"strict": true,
 		"noImplicitReturns": true,
 		"noFallthroughCasesInSwitch": true,
-		"noUnusedParameters": true
-	}
+		"noUnusedParameters": true,
+		"types": [
+			"node"
+		],
+		"resolveJsonModule": true,
+		"esModuleInterop": true
+	},
+	"include": [
+		"src/**/*.ts"
+	],
+	"exclude": [
+		"out",
+		"node_modules"
+	]
 }

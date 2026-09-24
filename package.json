@@ -1,112 +1,123 @@
 {
-  "name": "branch-compare",
-  "displayName": "Branch Compare",
-  "description": "Select to which branch git compares to display its colordecorations.",
-  "version": "0.0.1",
-  "publisher": "der-floh",
-  "license": "MIT",
-  "icon": "assets/icon-x512.png",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Florian-Noever/branch-compare"
-  },
-  "bugs": {
-    "url": "https://github.com/Florian-Noever/branch-compare/issues"
-  },
-  "homepage": "https://github.com/Florian-Noever/branch-compare",
-  "keywords": [
-    "git",
-    "compare",
-    "branch",
-    "base branch",
-    "decorations",
-    "diff"
-  ],
-  "engines": {
-    "vscode": "^1.103.0"
-  },
-  "categories": [
-    "SCM Providers",
-    "Other"
-  ],
-  "extensionKind": [
-    "workspace"
-  ],
-  "extensionDependencies": [
-    "vscode.git"
-  ],
-  "activationEvents": [
-    "workspaceContains:.git",
-    "onStartupFinished"
-  ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "branchCompare.setBase",
-        "title": "Branch Compare: Set Base Branch"
-      },
-      {
-        "command": "branchCompare.refresh",
-        "title": "Branch Compare: Refresh Decorations"
-      }
-    ],
-    "menus": {
-      "commandPalette": [
-        {
-          "command": "branchCompare.setBase",
-          "when": "gitOpenRepositoryCount > 0"
-        },
-        {
-          "command": "branchCompare.refresh",
-          "when": "gitOpenRepositoryCount > 0"
-        }
-      ]
+    "name": "branch-compare",
+    "displayName": "Branch Compare",
+    "description": "Choose which branch Git file decorations in the Explorer compare against.",
+    "version": "0.0.1",
+    "publisher": "Florian-Noever",
+    "license": "MIT",
+    "icon": "assets/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Florian-Noever/branch-compare"
     },
-    "configuration": {
-      "title": "Branch Compare",
-      "properties": {
-        "branchCompare.baseRefs": {
-          "type": "object",
-          "default": {},
-          "markdownDescription": "List of the Branch and Base branch/ref to compare against (e.g. `yourBranch:` `origin/main`).",
-          "additionalProperties": {
-            "type": "string",
-            "description": "Your Branch that should be compared."
-          },
-          "propertyNames": {
-            "pattern": "^[\\w./-]+$",
-            "description": "Branch name (allowed: letters, digits, _, ., /, -)"
-          }
+    "bugs": {
+        "url": "https://github.com/Florian-Noever/branch-compare/issues"
+    },
+    "homepage": "https://github.com/Florian-Noever/branch-compare",
+    "markdown": "github",
+    "qna": "github",
+    "keywords": [
+        "git",
+        "compare",
+        "branch",
+        "base branch",
+        "decorations",
+        "diff"
+    ],
+    "engines": {
+        "vscode": "^1.105.0"
+    },
+    "categories": [
+        "SCM Providers",
+        "Other"
+    ],
+    "extensionKind": [
+        "workspace"
+    ],
+    "extensionDependencies": [
+        "vscode.git"
+    ],
+    "activationEvents": [
+        "workspaceContains:.git",
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "branchCompare.setBase",
+                "title": "Set Base Branch",
+                "category": "Branch Compare"
+            },
+            {
+                "command": "branchCompare.refresh",
+                "title": "Refresh Decorations",
+                "category": "Branch Compare"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "branchCompare.setBase",
+                    "when": "gitOpenRepositoryCount > 0"
+                },
+                {
+                    "command": "branchCompare.refresh",
+                    "when": "gitOpenRepositoryCount > 0"
+                }
+            ]
         },
-        "branchCompare.autoFetch": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto 'git fetch' the base ref before computing changes."
+        "configuration": {
+            "title": "Branch Compare",
+            "properties": {
+                "branchCompare.baseRefs": {
+                    "type": "object",
+                    "default": {},
+                    "markdownDescription": "Base branch or ref to compare each local branch against, keyed by branch name (e.g. `\"feature/login\": \"origin/main\"`). Use `__branch_origin__` for all changes since the branch was created, or `__main_origin__` for all changes since branching from the main development branch. Easiest to set with **Branch Compare: Set Base Branch**.",
+                    "additionalProperties": {
+                        "type": "string",
+                        "description": "Base branch or ref to compare against. An empty string disables decorations for this branch."
+                    },
+                    "propertyNames": {
+                        "pattern": "^[\\w./-]+$",
+                        "description": "Branch name (allowed: letters, digits, _, ., /, -)"
+                    }
+                },
+                "branchCompare.autoFetch": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Fetch the remote base ref (at most every 30 seconds) before computing changes."
+                }
+            }
         }
-      }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "npm run check-types && npm run lint && node esbuild.mjs",
+        "watch": "npm-run-all -p watch:*",
+        "watch:esbuild": "node esbuild.mjs --watch",
+        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+        "package": "npx -y @vscode/vsce package",
+        "compile-tests": "node esbuild.mjs --tests",
+        "pretest": "npm run check-types && npm run compile-tests",
+        "check-types": "tsc --noEmit",
+        "lint": "eslint src",
+        "test": "node ./out/test/runTests.js"
+    },
+    "devDependencies": {
+        "@types/mocha": "^10.0.10",
+        "@types/node": "25.x",
+        "@types/vscode": "^1.105.0",
+        "@typescript-eslint/eslint-plugin": "^8.56.1",
+        "@typescript-eslint/parser": "^8.56.1",
+        "@vscode/test-electron": "^2.5.2",
+        "esbuild": "^0.28.2",
+        "eslint": "^10.0.2",
+        "mocha": "^12.0.2",
+        "npm-run-all": "^4.1.5",
+        "typescript": "^5.9.3"
+    },
+    "dependencies": {
+        "async-sema": "^3.1.1"
     }
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "package": "npx -y @vscode/vsce package"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.103.0",
-    "@typescript-eslint/eslint-plugin": "^8.39.0",
-    "@typescript-eslint/parser": "^8.39.0",
-    "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2",
-    "eslint": "^9.32.0",
-    "typescript": "^5.9.2"
-  },
-  "dependencies": {
-    "async-sema": "^3.1.1"
-  }
 }
