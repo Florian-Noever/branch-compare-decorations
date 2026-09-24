@@ -1,40 +1,23 @@
 import * as vscode from 'vscode';
-import { CONFIG_BASEREFS, EXTENSION } from '../extension';
-import { GitUtils } from './gitUtils';
+import type { API as GitAPI } from '../types/git';
+import { CONFIG_BASE_REFS, CONFIG_SECTION } from '../constants';
+import { getActiveRepository } from './gitUtils';
 
-export class BaseRefUtils {
-    static get baseRefs(): Record<string, string> {
-        const cfg = vscode.workspace.getConfiguration(EXTENSION);
-        const current = cfg.get<Record<string, string>>(CONFIG_BASEREFS, {});
-        return current;
-    }
-    static set baseRefs(current: Record<string, string>) {
-        const cfg = vscode.workspace.getConfiguration(EXTENSION);
-        void cfg.update(CONFIG_BASEREFS, current, vscode.ConfigurationTarget.Global);
-    }
+function getBaseRefs(): Record<string, string> {
+    return vscode.workspace.getConfiguration(CONFIG_SECTION).get<Record<string, string>>(CONFIG_BASE_REFS, {});
+}
 
-    static getCurrBaseRef(): string {
-        const currBranch = GitUtils.getCurrBranch();
-        if (!currBranch) {
-            return '';
-        }
-        const currBranchName = GitUtils.getBranchName(currBranch) ?? '';
+export function getBaseRefForBranch(branchName: string): string {
+    return getBaseRefs()[branchName] ?? '';
+}
 
-        const cfg = vscode.workspace.getConfiguration(EXTENSION);
+/** Base ref configured for the current branch of the active repository */
+export function getCurrentBaseRef(gitApi: GitAPI): string {
+    const branchName = getActiveRepository(gitApi)?.state.HEAD?.name;
+    return branchName ? getBaseRefForBranch(branchName) : '';
+}
 
-        const current = cfg.get<Record<string, string>>(CONFIG_BASEREFS, {});
-        return current[currBranchName] ?? '';
-    }
-
-    static addOrUpdateBaseRef(repoName: string, baseRef: string) {
-        return this.addOrUpdateBaseRefAsync(repoName, baseRef);
-    }
-
-    static async addOrUpdateBaseRefAsync(repoName: string, baseRef: string) {
-        const current = this.baseRefs;
-        current[repoName] = baseRef;
-
-        const cfg = vscode.workspace.getConfiguration(EXTENSION);
-        await cfg.update(CONFIG_BASEREFS, current, vscode.ConfigurationTarget.Global);
-    }
+export async function setBaseRefForBranch(branchName: string, baseRef: string): Promise<void> {
+    const baseRefs = { ...getBaseRefs(), [branchName]: baseRef };
+    await vscode.workspace.getConfiguration(CONFIG_SECTION).update(CONFIG_BASE_REFS, baseRefs, vscode.ConfigurationTarget.Global);
 }

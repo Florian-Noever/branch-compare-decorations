@@ -1,76 +1,31 @@
 import * as vscode from 'vscode';
-import { BranchCompareProvider } from './models/branchCompareProvider';
-import { GitBranchPicker } from './models/gitBranchPicker';
-import { GitUtils } from './utils/gitUtils';
-import { BaseRefUtils } from './utils/baseRefUtils';
+import { COMMAND_REFRESH, COMMAND_SET_BASE, MANIFEST } from './constants';
+import { handleRefreshDecorations } from './handlers/refreshDecorations';
+import { handleSetBaseBranch } from './handlers/setBaseBranch';
+import { BranchCompareProvider } from './utils/branchCompareProvider';
+import { GitBranchPicker } from './utils/gitBranchPicker';
+import { getGitApi } from './utils/gitUtils';
+import { Logger } from './utils/logger';
 
-export const EXTENSION = 'branchCompare';
-export const EXTENSION_NAME = 'Branch Compare';
-export const CONFIG_BASEREFS = 'baseRefs';
-export const CONFIG_AUTOFETCH = 'autoFetch';
-export const COMMAND_REFRESH = 'refresh';
-export const COMMAND_SETBASE = 'setBase';
+export function activate(context: vscode.ExtensionContext) {
+    Logger.initialize(context);
 
-let provider: BranchCompareProvider | undefined;
-let picker: GitBranchPicker;
+    const gitApi = getGitApi();
+    if (!gitApi) {
+        Logger.warn('The built-in Git extension is unavailable, decorations are turned off.');
+        return;
+    }
 
-export let log: vscode.LogOutputChannel;
+    const provider = new BranchCompareProvider(gitApi);
+    const picker = new GitBranchPicker(gitApi);
 
-export async function activate(context: vscode.ExtensionContext) {
-	// Output channel
-	log = vscode.window.createOutputChannel(EXTENSION_NAME, { log: true });
-	context.subscriptions.push(log);
+    context.subscriptions.push(
+        vscode.window.registerFileDecorationProvider(provider),
+        vscode.commands.registerCommand(COMMAND_REFRESH, () => handleRefreshDecorations(provider)),
+        vscode.commands.registerCommand(COMMAND_SET_BASE, () => handleSetBaseBranch(gitApi, picker, provider))
+    );
 
-	// Decorations
-	provider = new BranchCompareProvider();
-	context.subscriptions.push(vscode.window.registerFileDecorationProvider(provider));
-
-	// Branch picker
-	picker = new GitBranchPicker();
-
-	// Commands
-	context.subscriptions.push(
-		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_REFRESH, refreshDecorations),
-		vscode.commands.registerCommand(EXTENSION + '.' + COMMAND_SETBASE, setBaseRepo)
-	);
+    Logger.info(`Successfully activated "${MANIFEST.displayName}" extension.`);
 }
 
 export function deactivate() { }
-
-async function refreshDecorations() {
-	try {
-		await provider!.refresh();
-		vscode.window.showInformationMessage(`${EXTENSION_NAME}: Decorations refreshed`);
-	} catch (e: any) {
-		vscode.window.showErrorMessage(`${EXTENSION_NAME}: Failed to refresh decorations: ${e.message}`);
-	}
-}
-
-async function setBaseRepo(): Promise<void> {
-	let currBranchName = '';
-	let currBaseRef = '';
-
-	try {
-		const currBranch = GitUtils.getCurrBranch();
-		currBranchName = GitUtils.getBranchName(currBranch!) ?? '';
-		currBaseRef = BaseRefUtils.getCurrBaseRef();
-	} catch (e) {
-		vscode.window.showErrorMessage(`${EXTENSION_NAME}: Failed to get current repository: ${e}`);
-		return;
-	}
-
-	const chosen = await picker.pickBaseReference(currBaseRef);
-	if (chosen === undefined) {
-		return; // cancelled
-	}
-
-	await BaseRefUtils.addOrUpdateBaseRef(currBranchName, chosen);
-
-	if (!chosen.trim()) {
-		vscode.window.showInformationMessage(`${EXTENSION_NAME}: disabled.`);
-	} else {
-		vscode.window.showInformationMessage(`${EXTENSION_NAME}: compare to '${chosen}'.`);
-	}
-
-	await provider?.refresh();
-}

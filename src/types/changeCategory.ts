@@ -1,6 +1,4 @@
-type Pair = { key: string; value: string };
-
-type ChangeCategory =
+export type ChangeCategory =
     | 'added'
     | 'modified'
     | 'deleted'
@@ -10,7 +8,7 @@ type ChangeCategory =
     | 'ignored'
     | 'copied';
 
-type GitDecorationColorKey =
+export type GitDecorationColorKey =
     | 'gitDecoration.addedResourceForeground'
     | 'gitDecoration.modifiedResourceForeground'
     | 'gitDecoration.deletedResourceForeground'
