@@ -15,12 +15,13 @@ import { normalizeFsPath } from './pathUtils';
  * Decorates the files that changed between a configurable base ref and HEAD, using the badges and
  * theme colors of the built-in Git decorations.
  */
-export class BranchCompareProvider implements vscode.FileDecorationProvider {
+export class BranchCompareProvider implements vscode.FileDecorationProvider, vscode.Disposable {
     private readonly _onDidChangeFileDecorations = new vscode.EventEmitter<vscode.Uri[] | undefined>();
     readonly onDidChangeFileDecorations = this._onDidChangeFileDecorations.event;
 
     /** Normalized path of every changed file */
     private changedFiles = new Map<string, ChangeCategory>();
+    private readonly disposables: vscode.Disposable[] = [this._onDidChangeFileDecorations];
     private readonly repositorySubscriptions = new Map<Repository, vscode.Disposable[]>();
     private readonly baselineCache = new Map<string, string>();
     private readonly lastFetchByRef = new Map<string, number>();
@@ -30,32 +31,43 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider {
     private isRefreshQueued = false;
 
     constructor(private readonly gitApi: GitAPI) {
-        vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_BASE_REFS}`) || e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_AUTO_FETCH}`)) {
+        this.disposables.push(
+            vscode.workspace.onDidChangeConfiguration(e => {
+                if (e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_BASE_REFS}`) || e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_AUTO_FETCH}`)) {
+                    this.scheduleRefresh();
+                }
+            }),
+            vscode.workspace.onDidSaveTextDocument(() => this.scheduleRefresh()),
+            vscode.workspace.onDidCreateFiles(() => this.scheduleRefresh()),
+            vscode.workspace.onDidDeleteFiles(() => this.scheduleRefresh()),
+            vscode.workspace.onDidRenameFiles(() => this.scheduleRefresh()),
+            gitApi.onDidOpenRepository(repository => {
+                Logger.info(`Repository opened: ${repository.rootUri.fsPath}`);
+                this.subscribeToRepository(repository);
                 this.scheduleRefresh();
-            }
-        });
-        vscode.workspace.onDidSaveTextDocument(() => this.scheduleRefresh());
-        vscode.workspace.onDidCreateFiles(() => this.scheduleRefresh());
-        vscode.workspace.onDidDeleteFiles(() => this.scheduleRefresh());
-        vscode.workspace.onDidRenameFiles(() => this.scheduleRefresh());
+            }),
+            gitApi.onDidCloseRepository(repository => {
+                Logger.info(`Repository closed: ${repository.rootUri.fsPath}`);
+                this.unsubscribeFromRepository(repository);
+                this.scheduleRefresh();
+            })
+        );
 
         for (const repository of gitApi.repositories) {
             this.subscribeToRepository(repository);
         }
-        gitApi.onDidOpenRepository(repository => {
-            Logger.info(`Repository opened: ${repository.rootUri.fsPath}`);
-            this.subscribeToRepository(repository);
-            this.scheduleRefresh();
-        });
-        gitApi.onDidCloseRepository(repository => {
-            Logger.info(`Repository closed: ${repository.rootUri.fsPath}`);
-            this.unsubscribeFromRepository(repository);
-            this.scheduleRefresh();
-        });
-
         if (gitApi.repositories.length > 0) {
             this.scheduleRefresh();
+        }
+    }
+
+    dispose(): void {
+        clearTimeout(this.refreshTimer);
+        for (const repository of [...this.repositorySubscriptions.keys()]) {
+            this.unsubscribeFromRepository(repository);
+        }
+        for (const disposable of this.disposables) {
+            disposable.dispose();
         }
     }
 

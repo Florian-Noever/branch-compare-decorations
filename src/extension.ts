@@ -20,6 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
     const picker = new GitBranchPicker(gitApi);
 
     context.subscriptions.push(
+        provider,
         vscode.window.registerFileDecorationProvider(provider),
         vscode.commands.registerCommand(COMMAND_REFRESH, () => handleRefreshDecorations(provider)),
         vscode.commands.registerCommand(COMMAND_SET_BASE, () => handleSetBaseBranch(gitApi, picker, provider))
