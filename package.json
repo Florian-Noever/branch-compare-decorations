@@ -94,28 +94,29 @@
     "scripts": {
         "vscode:prepublish": "npm run compile",
         "compile": "npm run check-types && npm run lint && node esbuild.mjs",
-        "watch": "npm-run-all -p watch:*",
+        "watch": "node ./node_modules/npm-run-all/bin/npm-run-all/index.js -p watch:*",
         "watch:esbuild": "node esbuild.mjs --watch",
-        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-        "package": "npx -y @vscode/vsce package",
+        "watch:tsc": "node ./node_modules/typescript/bin/tsc --noEmit --watch --project tsconfig.json",
+        "package": "node ./node_modules/@vscode/vsce/vsce package --no-dependencies",
         "compile-tests": "node esbuild.mjs --tests",
         "pretest": "npm run check-types && npm run compile-tests",
-        "check-types": "tsc --noEmit",
-        "lint": "eslint src",
+        "check-types": "node ./node_modules/typescript/bin/tsc --noEmit",
+        "lint": "node ./node_modules/eslint/bin/eslint.js src",
         "test": "node ./out/test/runTests.js"
     },
     "devDependencies": {
         "@types/mocha": "^10.0.10",
-        "@types/node": "25.x",
-        "@types/vscode": "^1.105.0",
-        "@typescript-eslint/eslint-plugin": "^8.56.1",
-        "@typescript-eslint/parser": "^8.56.1",
-        "@vscode/test-electron": "^2.5.2",
+        "@types/node": "22.x",
+        "@types/vscode": "~1.105.0",
+        "@typescript-eslint/eslint-plugin": "^8.71.1",
+        "@typescript-eslint/parser": "^8.71.1",
+        "@vscode/test-electron": "^3.1.0",
+        "@vscode/vsce": "^4.0.0",
         "esbuild": "^0.28.2",
-        "eslint": "^10.0.2",
-        "mocha": "^12.0.2",
+        "eslint": "^10.12.0",
+        "mocha": "^12.0.3",
         "npm-run-all": "^4.1.5",
-        "typescript": "^5.9.3"
+        "typescript": "~6.0.3"
     },
     "dependencies": {
         "async-sema": "^3.1.1"
