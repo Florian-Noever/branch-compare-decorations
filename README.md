@@ -1,4 +1,4 @@
-# <img src="./assets/icon.png" alt="" height="26"> Branch Compare
+# <img src="./assets/icon.png" alt="" height="32"> Branch Compare
 
 Choose which branch the Git file decorations in the Explorer compare against. Branch Compare marks every file your branch changed compared to a base branch — `origin/main`, the point where your branch was created, or any other ref — with the familiar Git badges and colors, next to the built-in decorations for uncommitted changes.
 
@@ -101,4 +101,4 @@ Licensed under the [MIT License](./LICENSE).
 <br>
 <br>
 
-[!["Buy me a coffee"](./assets/meta/orange-button-x180.png)](https://www.buymeacoffee.com/florian_noever)
+[!["Buy me a coffee"](https://raw.githubusercontent.com/Florian-Noever/Florian-Noever/refs/heads/main/_meta/BuyMeACoffee/Buttons%20%26%20Icons/orange-button-x180.png)](https://www.buymeacoffee.com/florian_noever)
