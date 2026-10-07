@@ -2,7 +2,7 @@
     "name": "branch-compare-decorations",
     "displayName": "Branch Compare Decorations",
     "description": "Choose which branch Git file decorations in the Explorer compare against.",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "publisher": "Florian-Noever",
     "license": "MIT",
     "icon": "assets/icon.png",
