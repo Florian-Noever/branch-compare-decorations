@@ -1,6 +1,6 @@
-# <img src="./assets/icon.png" alt="" height="32"> Branch Compare
+# <img src="./assets/icon.png" alt="" height="32"> Branch Compare Decorations
 
-Choose which branch the Git file decorations in the Explorer compare against. Branch Compare marks every file your branch changed compared to a base branch — `origin/main`, the point where your branch was created, or any other ref — with the familiar Git badges and colors, next to the built-in decorations for uncommitted changes.
+Choose which branch the Git file decorations in the Explorer compare against. Branch Compare Decorations marks every file your branch changed compared to a base branch — `origin/main`, the point where your branch was created, or any other ref — with the familiar Git badges and colors, next to the built-in decorations for uncommitted changes.
 
 ---
 
@@ -17,7 +17,7 @@ Choose which branch the Git file decorations in the Explorer compare against. Br
 
 ## 🧰 Usage
 
-Run **Branch Compare: Set Base Branch** from the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). In a workspace with several repositories, pick the repository first. Then choose what its current branch is compared against:
+Run **Branch Compare Decorations: Set Base Branch** from the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`). In a workspace with several repositories, pick the repository first. Then choose what its current branch is compared against:
 
 | Option                      | Compares against                                                                                                |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -29,7 +29,7 @@ Run **Branch Compare: Set Base Branch** from the command palette (`Ctrl+Shift+P`
 
 Hover a decorated file to see what it is compared against.
 
-**Branch Compare: Refresh Decorations** recomputes everything from scratch, e.g. after a base branch was force-pushed.
+**Branch Compare Decorations: Refresh Decorations** recomputes everything from scratch, e.g. after a base branch was force-pushed.
 
 ---
 
@@ -37,10 +37,10 @@ Hover a decorated file to see what it is compared against.
 
 | Setting                   | Default | Description                                                                                                                                                                                    |
 | ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `branchCompare.baseRefs`  | `{}`    | Base ref per local branch name, e.g. `{ "feature/login": "origin/main" }`. `__branch_origin__` and `__main_origin__` select the special comparisons. Written by **Set Base Branch**. |
-| `branchCompare.autoFetch` | `true`  | Fetch the remote base ref (at most every 30 seconds) before computing changes.                                                                                                                |
+| `branchCompareDecorations.baseRefs`  | `{}`    | Base ref per local branch name, e.g. `{ "feature/login": "origin/main" }`. `__branch_origin__` and `__main_origin__` select the special comparisons. Written by **Set Base Branch**. |
+| `branchCompareDecorations.autoFetch` | `true`  | Fetch the remote base ref (at most every 30 seconds) before computing changes.                                                                                                                |
 
-> **Note:** `branchCompare.baseRefs` is stored in your user settings and keyed by branch name only, so e.g. all branches named `main` share one base ref across repositories.
+> **Note:** `branchCompareDecorations.baseRefs` is stored in your user settings and keyed by branch name only, so e.g. all branches named `main` share one base ref across repositories.
 
 ---
 
@@ -49,15 +49,15 @@ Hover a decorated file to see what it is compared against.
 - Git, with VS Code's built-in Git extension enabled (`git.enabled`) in a trusted workspace
 - VS Code 1.105 or later
 
-Branch Compare runs where your workspace is, so it also works over Remote SSH, WSL and Dev Containers.
+Branch Compare Decorations runs where your workspace is, so it also works over Remote SSH, WSL and Dev Containers.
 
 ---
 
 ## 🧩 Repository
 
-GitHub: [Florian-Noever/branch-compare](https://github.com/Florian-Noever/branch-compare)
+GitHub: [Florian-Noever/branch-compare-decorations](https://github.com/Florian-Noever/branch-compare-decorations)
 
-Bug reports and feature requests are welcome via [Issues](https://github.com/Florian-Noever/branch-compare/issues).
+Bug reports and feature requests are welcome via [Issues](https://github.com/Florian-Noever/branch-compare-decorations/issues).
 
 ---
 

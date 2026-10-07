@@ -5,7 +5,7 @@ export const MANIFEST = pkg;
 export const COMMAND_SET_BASE = pkg.contributes.commands[0].command;
 export const COMMAND_REFRESH = pkg.contributes.commands[1].command;
 
-export const CONFIG_SECTION = 'branchCompare';
+export const CONFIG_SECTION = 'branchCompareDecorations';
 export const CONFIG_BASE_REFS = 'baseRefs';
 export const CONFIG_AUTO_FETCH = 'autoFetch';
 

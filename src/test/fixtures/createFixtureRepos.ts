@@ -15,11 +15,11 @@ export interface FixtureWorkspace {
  * - repoB: no remote; branch `topic` modifies and adds a file compared to `main`.
  */
 export function createFixtureWorkspace(): FixtureWorkspace {
-    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-compare-'));
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-compare-decorations-'));
     // Isolate git from the user's global and system configuration (hooks, signing, default branch)
     const emptyConfig = path.join(rootPath, '.gitconfig');
     fs.writeFileSync(emptyConfig, '');
-    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Branch Compare Tests', '-c', 'user.email=tests@example.com', ...args], {
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Branch Compare Decorations Tests', '-c', 'user.email=tests@example.com', ...args], {
         cwd,
         env: { ...process.env, GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' },
         stdio: 'pipe',

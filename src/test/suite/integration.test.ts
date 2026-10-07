@@ -6,7 +6,7 @@ import { BRANCH_ORIGIN_REF, CONFIG_BASE_REFS, CONFIG_SECTION, MAIN_ORIGIN_REF } 
 import { BranchCompareProvider } from '../../utils/branchCompareProvider';
 import { normalizeFsPath } from '../../utils/pathUtils';
 
-suite('Branch Compare integration', () => {
+suite('Branch Compare Decorations integration', () => {
     let gitApi: GitAPI;
     let provider: BranchCompareProvider;
     let repoA: string;

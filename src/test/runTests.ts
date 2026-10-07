@@ -10,7 +10,7 @@ async function main() {
     delete process.env.ELECTRON_RUN_AS_NODE;
 
     // Windows: deep workspace paths push VS Code's bundled binaries past MAX_PATH
-    const cachePath = process.platform === 'win32' ? path.join(os.tmpdir(), 'branch-compare-vscode-test') : path.resolve('.vscode-test');
+    const cachePath = process.platform === 'win32' ? path.join(os.tmpdir(), 'branch-compare-decorations-vscode-test') : path.resolve('.vscode-test');
     const profileArgs = ['--extensions-dir', path.join(cachePath, 'extensions'), '--user-data-dir', path.join(cachePath, 'user-data')];
 
     // The fixture repositories must exist before VS Code opens them as the test workspace

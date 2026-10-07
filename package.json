@@ -1,6 +1,6 @@
 {
-    "name": "branch-compare",
-    "displayName": "Branch Compare",
+    "name": "branch-compare-decorations",
+    "displayName": "Branch Compare Decorations",
     "description": "Choose which branch Git file decorations in the Explorer compare against.",
     "version": "1.0.0",
     "publisher": "Florian-Noever",
@@ -8,14 +8,14 @@
     "icon": "assets/icon.png",
     "repository": {
         "type": "git",
-        "url": "https://github.com/Florian-Noever/branch-compare"
+        "url": "https://github.com/Florian-Noever/branch-compare-decorations"
     },
     "bugs": {
-        "url": "https://github.com/Florian-Noever/branch-compare/issues"
+        "url": "https://github.com/Florian-Noever/branch-compare-decorations/issues"
     },
-    "homepage": "https://github.com/Florian-Noever/branch-compare",
+    "homepage": "https://github.com/Florian-Noever/branch-compare-decorations",
     "markdown": "github",
-    "qna": "https://github.com/Florian-Noever/branch-compare/issues",
+    "qna": "https://github.com/Florian-Noever/branch-compare-decorations/issues",
     "keywords": [
         "git",
         "compare",
@@ -45,35 +45,35 @@
     "contributes": {
         "commands": [
             {
-                "command": "branchCompare.setBase",
+                "command": "branchCompareDecorations.setBase",
                 "title": "Set Base Branch",
-                "category": "Branch Compare"
+                "category": "Branch Compare Decorations"
             },
             {
-                "command": "branchCompare.refresh",
+                "command": "branchCompareDecorations.refresh",
                 "title": "Refresh Decorations",
-                "category": "Branch Compare"
+                "category": "Branch Compare Decorations"
             }
         ],
         "menus": {
             "commandPalette": [
                 {
-                    "command": "branchCompare.setBase",
+                    "command": "branchCompareDecorations.setBase",
                     "when": "gitOpenRepositoryCount > 0"
                 },
                 {
-                    "command": "branchCompare.refresh",
+                    "command": "branchCompareDecorations.refresh",
                     "when": "gitOpenRepositoryCount > 0"
                 }
             ]
         },
         "configuration": {
-            "title": "Branch Compare",
+            "title": "Branch Compare Decorations",
             "properties": {
-                "branchCompare.baseRefs": {
+                "branchCompareDecorations.baseRefs": {
                     "type": "object",
                     "default": {},
-                    "markdownDescription": "Base branch or ref to compare each local branch against, keyed by branch name (e.g. `\"feature/login\": \"origin/main\"`). Use `__branch_origin__` for all changes since the branch was created, or `__main_origin__` for all changes since branching from the main development branch. Easiest to set with **Branch Compare: Set Base Branch**.",
+                    "markdownDescription": "Base branch or ref to compare each local branch against, keyed by branch name (e.g. `\"feature/login\": \"origin/main\"`). Use `__branch_origin__` for all changes since the branch was created, or `__main_origin__` for all changes since branching from the main development branch. Easiest to set with **Branch Compare Decorations: Set Base Branch**.",
                     "additionalProperties": {
                         "type": "string",
                         "description": "Base branch or ref to compare against. An empty string disables decorations for this branch."
@@ -83,7 +83,7 @@
                         "description": "Branch name (allowed: letters, digits, _, ., /, -)"
                     }
                 },
-                "branchCompare.autoFetch": {
+                "branchCompareDecorations.autoFetch": {
                     "type": "boolean",
                     "default": true,
                     "description": "Fetch the remote base ref (at most every 30 seconds) before computing changes."
