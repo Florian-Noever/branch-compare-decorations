@@ -92,6 +92,12 @@ npm run package
 
 The integration tests create throwaway Git repositories in the temp folder and open them in a separate VS Code instance.
 
+### CI & Releases
+
+CI runs on every push and pull request through the shared workflows of [Florian-Noever/Florian-Noever](https://github.com/Florian-Noever/Florian-Noever/blob/main/.github/CI.md). It runs the unit and integration tests in VS Code and packs a preview VSIX.
+
+To release, bump the version with `npm version x.y.z --no-git-tag-version` and publish a GitHub release `vx.y.z` from a commit whose CI is green. The publish workflow builds and tests the tag, attaches the VSIX to the release and publishes it to the Visual Studio Marketplace and Open VSX.
+
 ---
 
 ## 📜 License

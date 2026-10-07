@@ -1,58 +1,24 @@
-on:
-  workflow_run:
-    workflows: ["Build and Package Extension"]
-    types: [completed]
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Release tag to publish (e.g. v1.2.3)'
-        required: true
+name: Publish Release
 
-name: Publish Extension
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: vscode-extension-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Get release tag
-        id: tag
-        run: |
-          if [ -n "${{ inputs.release_tag }}" ]; then
-            echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=$(git describe --tags --exact-match HEAD)" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download VSIX from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ steps.tag.outputs.tag }}
-          fileName: "*.vsix"
-          out-file-path: "."
-
-      - name: Find VSIX file
-        id: vsix
-        run: |
-          path=$(find . -maxdepth 1 -name '*.vsix' | head -1)
-          echo "path=$path" >> $GITHUB_OUTPUT
-          echo "Found VSIX: $path"
-
-      - name: Publish to Open VSX Registry
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.OPEN_VSX_TOKEN }}
-          extensionFile: ${{ steps.vsix.outputs.path }}
-
-      - name: Publish to Visual Studio Marketplace
-        uses: HaaLeo/publish-vscode-extension@v2
-        with:
-          pat: ${{ secrets.VS_MARKETPLACE_TOKEN }}
-          registryUrl: https://marketplace.visualstudio.com
-          extensionFile: ${{ steps.vsix.outputs.path }}
+    uses: Florian-Noever/Florian-Noever/.github/workflows/vscode-extension-publish.yml@v1
+    with:
+      test-command: npm test
+      vs-marketplace: true
+      open-vsx: true
+    secrets:
+      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
