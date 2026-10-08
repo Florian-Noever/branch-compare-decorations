@@ -4,8 +4,11 @@ export const MANIFEST = pkg;
 
 export const COMMAND_SET_BASE = pkg.contributes.commands[0].command;
 export const COMMAND_REFRESH = pkg.contributes.commands[1].command;
+export const COMMAND_DEACTIVATE = pkg.contributes.commands[2].command;
+export const COMMAND_ACTIVATE = pkg.contributes.commands[3].command;
 
 export const CONFIG_SECTION = 'branchCompareDecorations';
+export const CONFIG_ENABLED = 'enabled';
 export const CONFIG_BASE_REFS = 'baseRefs';
 export const CONFIG_AUTO_FETCH = 'autoFetch';
 

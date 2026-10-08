@@ -2,8 +2,9 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { API as GitAPI, GitExtension } from '../../types/git';
-import { BRANCH_ORIGIN_REF, CONFIG_BASE_REFS, CONFIG_SECTION, MAIN_ORIGIN_REF } from '../../constants';
+import { BRANCH_ORIGIN_REF, COMMAND_ACTIVATE, COMMAND_DEACTIVATE, CONFIG_BASE_REFS, CONFIG_ENABLED, CONFIG_SECTION, MAIN_ORIGIN_REF } from '../../constants';
 import { BranchCompareProvider } from '../../utils/branchCompareProvider';
+import { areDecorationsEnabled, setDecorationsEnabled } from '../../utils/enabledUtils';
 import { normalizeFsPath } from '../../utils/pathUtils';
 
 suite('Branch Compare Decorations integration', () => {
@@ -31,6 +32,7 @@ suite('Branch Compare Decorations integration', () => {
     suiteTeardown(async () => {
         provider?.dispose();
         await vscode.workspace.getConfiguration(CONFIG_SECTION).update(CONFIG_BASE_REFS, undefined, vscode.ConfigurationTarget.Global);
+        await vscode.workspace.getConfiguration(CONFIG_SECTION).update(CONFIG_ENABLED, undefined, vscode.ConfigurationTarget.Global);
     });
 
     test('decorates the changes of the feature branch against origin/main', async () => {
@@ -127,6 +129,37 @@ suite('Branch Compare Decorations integration', () => {
         }
     });
 
+    test('deactivating removes every decoration and activating restores them', async () => {
+        await setBaseRefs({ feature: 'origin/main', topic: 'main' });
+        assertBothRepositoriesDecorated();
+        const events: (vscode.Uri[] | undefined)[] = [];
+        const subscription = provider.onDidChangeFileDecorations(uris => events.push(uris));
+        try {
+            await setEnabled(false);
+            assert.strictEqual(badge(repoA, 'modified.txt'), undefined);
+            assert.strictEqual(badge(repoA, 'lib'), undefined);
+            assert.strictEqual(badge(repoB, 'b.txt'), undefined);
+            const changedPaths = events.flatMap(uris => uris ?? []).map(uri => normalizeFsPath(uri.fsPath));
+            assert.ok(events.includes(undefined) || changedPaths.includes(normalizeFsPath(path.join(repoA, 'modified.txt'))), 'Expected events for the previously decorated paths');
+        } finally {
+            subscription.dispose();
+            await setEnabled(true);
+        }
+        assertBothRepositoriesDecorated();
+    });
+
+    test('the Deactivate and Activate commands switch the setting', async () => {
+        try {
+            await vscode.commands.executeCommand(COMMAND_DEACTIVATE);
+            await waitFor(() => !areDecorationsEnabled(), 'Deactivate did not turn the decorations off');
+
+            await vscode.commands.executeCommand(COMMAND_ACTIVATE);
+            await waitFor(() => areDecorationsEnabled(), 'Activate did not turn the decorations on');
+        } finally {
+            await setEnabled(true);
+        }
+    });
+
     function assertBothRepositoriesDecorated(): void {
         assert.strictEqual(badge(repoA, 'modified.txt'), 'M');
         assert.strictEqual(badge(repoB, 'b.txt'), 'M');
@@ -140,6 +173,12 @@ suite('Branch Compare Decorations integration', () => {
             () => JSON.stringify(vscode.workspace.getConfiguration(CONFIG_SECTION).get(CONFIG_BASE_REFS)) === JSON.stringify(baseRefs),
             'The base refs setting was not applied'
         );
+        await provider.refresh();
+    }
+
+    async function setEnabled(enabled: boolean): Promise<void> {
+        await setDecorationsEnabled(enabled);
+        await waitFor(() => areDecorationsEnabled() === enabled, 'The enabled setting was not applied');
         await provider.refresh();
     }
 

@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { COMMAND_REFRESH, COMMAND_SET_BASE, MANIFEST } from './constants';
+import { COMMAND_ACTIVATE, COMMAND_DEACTIVATE, COMMAND_REFRESH, COMMAND_SET_BASE, MANIFEST } from './constants';
 import { handleRefreshDecorations } from './handlers/refreshDecorations';
 import { handleSetBaseBranch } from './handlers/setBaseBranch';
+import { handleSetDecorationsEnabled } from './handlers/setDecorationsEnabled';
 import { BranchCompareProvider } from './utils/branchCompareProvider';
 import { GitBranchPicker } from './utils/gitBranchPicker';
 import { getGitApi } from './utils/gitUtils';
@@ -23,7 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
         provider,
         vscode.window.registerFileDecorationProvider(provider),
         vscode.commands.registerCommand(COMMAND_REFRESH, () => handleRefreshDecorations(provider)),
-        vscode.commands.registerCommand(COMMAND_SET_BASE, () => handleSetBaseBranch(gitApi, picker, provider))
+        vscode.commands.registerCommand(COMMAND_SET_BASE, () => handleSetBaseBranch(gitApi, picker, provider)),
+        vscode.commands.registerCommand(COMMAND_DEACTIVATE, () => handleSetDecorationsEnabled(provider, false)),
+        vscode.commands.registerCommand(COMMAND_ACTIVATE, () => handleSetDecorationsEnabled(provider, true))
     );
 
     Logger.info(`Successfully activated "${MANIFEST.displayName}" extension.`);

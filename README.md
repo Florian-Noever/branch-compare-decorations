@@ -12,6 +12,7 @@ Choose which branch the Git file decorations in the Explorer compare against. Br
 - **Multi-repository workspaces** — every repository is compared against the base ref of its own current branch
 - **Auto fetch** — remote base refs are fetched before comparing (at most every 30 seconds)
 - **Fork-point aware** — uses `git merge-base --fork-point`, so a rebased base branch doesn't flood the Explorer with unrelated changes
+- **On/off switch** — deactivate the decorations to get VS Code's plain Git decorations back, and activate them again whenever you need them
 
 ---
 
@@ -31,14 +32,17 @@ Hover a decorated file to see what it is compared against.
 
 **Branch Compare Decorations: Refresh Decorations** recomputes everything from scratch, e.g. after a base branch was force-pushed.
 
+**Branch Compare Decorations: Deactivate** removes all decorations of this extension, so the Explorer shows only VS Code's built-in Git decorations again. It stays off in every window until you run **Branch Compare Decorations: Activate**.
+
 ---
 
 ## ⚙️ Extension Settings
 
-| Setting                   | Default | Description                                                                                                                                                                                    |
-| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Setting                              | Default | Description                                                                                                                                                                          |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `branchCompareDecorations.enabled`   | `true`  | Show this extension's decorations. When off, only VS Code's built-in Git decorations remain. Switched by **Deactivate** and **Activate**.                                            |
 | `branchCompareDecorations.baseRefs`  | `{}`    | Base ref per local branch name, e.g. `{ "feature/login": "origin/main" }`. `__branch_origin__` and `__main_origin__` select the special comparisons. Written by **Set Base Branch**. |
-| `branchCompareDecorations.autoFetch` | `true`  | Fetch the remote base ref (at most every 30 seconds) before computing changes.                                                                                                                |
+| `branchCompareDecorations.autoFetch` | `true`  | Fetch the remote base ref (at most every 30 seconds) before computing changes.                                                                                                       |
 
 > **Note:** `branchCompareDecorations.baseRefs` is stored in your user settings and keyed by branch name only, so e.g. all branches named `main` share one base ref across repositories.
 

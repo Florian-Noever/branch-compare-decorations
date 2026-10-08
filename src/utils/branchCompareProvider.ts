@@ -2,10 +2,11 @@ import * as vscode from 'vscode';
 import { Sema } from 'async-sema';
 import type { API as GitAPI, Repository } from '../types/git';
 import type { ChangeCategory } from '../types/changeCategory';
-import { CONFIG_AUTO_FETCH, CONFIG_BASE_REFS, CONFIG_SECTION, FETCH_COOLDOWN_MS, MAX_CONCURRENT_REPOSITORIES, MAX_DECORATION_EVENT_URIS, REFRESH_DEBOUNCE_MS } from '../constants';
+import { CONFIG_AUTO_FETCH, CONFIG_BASE_REFS, CONFIG_ENABLED, CONFIG_SECTION, FETCH_COOLDOWN_MS, MAX_CONCURRENT_REPOSITORIES, MAX_DECORATION_EVENT_URIS, REFRESH_DEBOUNCE_MS } from '../constants';
 import { getBaseRefForBranch } from './baseRefUtils';
 import { computeBaseline, describeBaseRef, getUpstreamRef, resolveSpecialBaseRef } from './baselineResolver';
 import { CATEGORY_PRESETS, categoryFromStatus } from './changeCategory';
+import { areDecorationsEnabled } from './enabledUtils';
 import { errorMessage } from './errors';
 import { parseRemoteRef } from './gitUtils';
 import { Logger } from './logger';
@@ -45,7 +46,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
     constructor(private readonly gitApi: GitAPI) {
         this.disposables.push(
             vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_BASE_REFS}`) || e.affectsConfiguration(`${CONFIG_SECTION}.${CONFIG_AUTO_FETCH}`)) {
+                if ([CONFIG_ENABLED, CONFIG_BASE_REFS, CONFIG_AUTO_FETCH].some(key => e.affectsConfiguration(`${CONFIG_SECTION}.${key}`))) {
                     this.scheduleRefresh();
                 }
             }),
@@ -126,7 +127,7 @@ export class BranchCompareProvider implements vscode.FileDecorationProvider, vsc
         try {
             const previousFiles = this.changedFiles;
             const rootPaths = this.getRootPaths();
-            this.changedFiles = await this.computeChanges();
+            this.changedFiles = areDecorationsEnabled() ? await this.computeChanges() : new Map();
             this.changedDirs = this.collectChangedDirs(rootPaths);
             this.fireDecorationChanges(previousFiles, rootPaths);
         } catch (e) {
