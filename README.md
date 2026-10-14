@@ -1,4 +1,4 @@
-# <img src="./assets/icon-x48.png" alt="" height="32"> Branch Compare Decorations
+# <img src="./assets/icon-x48.png" alt="" height="48"> Branch Compare Decorations
 
 Choose which branch the Git file decorations in the Explorer compare against. Branch Compare Decorations marks every file your branch changed compared to a base branch — `origin/main`, the point where your branch was created, or any other ref — with the familiar Git badges and colors, next to the built-in decorations for uncommitted changes.
 
